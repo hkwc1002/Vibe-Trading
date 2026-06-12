@@ -1,0 +1,157 @@
+"""Tail-session signal scanner skeleton for Low Absorb."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+
+from .chain_matrix import chain_branch_allows_stock
+from .config import LowAbsorbConfig
+from .data_provider import DailyBar, MarketDataProvider
+from .models import LowAbsorbSignal, ManualTradePlan, SignalStatus
+from .risk import calculate_open_stop_risk_cny
+from .sentiment import market_breadth_gate_passed
+from .trade_plan import create_manual_trade_plan
+
+
+
+def is_mainboard_symbol(symbol: str) -> bool:
+    """Return whether a symbol is in the domestic mainboard universe."""
+
+    code = symbol.strip().upper()
+    if code.startswith(("SH", "SZ")):
+        code = code[2:]
+    if len(code) != 6 or not code.isdigit():
+        return False
+    if code.startswith(("300", "688", "8", "4")):
+        return False
+    return code.startswith(("000", "001", "002", "003", "600", "601", "603", "605"))
+
+
+def _scan_at(trade_date: date, config: LowAbsorbConfig) -> datetime:
+    return datetime.combine(trade_date, config.scan_time)
+
+
+def _mean(values: list[Decimal]) -> Decimal:
+    return sum(values, Decimal("0")) / Decimal(len(values))
+
+
+class LowAbsorbScanner:
+    """Coordinates backend-only strategy gates before signal creation."""
+
+    def __init__(self, data_provider: MarketDataProvider, config: LowAbsorbConfig | None = None) -> None:
+        self._data_provider = data_provider
+        self._config = config or LowAbsorbConfig()
+
+    def scan_tail_session(
+        self,
+        trade_date: date,
+        *,
+        at: datetime | None = None,
+        symbols: list[str] | None = None,
+    ) -> list[ManualTradePlan]:
+        """Run the 14:45 funnel and return manual trade plans.
+
+        This is a recommendation workflow only. It never creates broker orders
+        or execution requests.
+        """
+
+        scan_at = at or _scan_at(trade_date, self._config)
+        breadth = self._data_provider.get_market_breadth(trade_date, scan_at)
+        if not market_breadth_gate_passed(breadth, config=self._config, at=scan_at):
+            return []
+
+        candidate_symbols = symbols if symbols is not None else list(getattr(self._data_provider, "symbols", []))
+        mainboard_symbols = [symbol for symbol in candidate_symbols if is_mainboard_symbol(symbol)]
+        if not mainboard_symbols:
+            return []
+
+        bars_by_symbol = self._data_provider.get_daily_bars(mainboard_symbols, trade_date, 20)
+        branch_strength = self._data_provider.get_chain_branch_strength(trade_date, lookback=20)
+        plans: list[ManualTradePlan] = []
+        for symbol in mainboard_symbols:
+            bars = bars_by_symbol.get(symbol) or []
+            if len(bars) < 20:
+                continue
+            latest = bars[-1]
+            if self._bar_is_stale(latest, scan_at):
+                continue
+            if not chain_branch_allows_stock(latest.industry, branch_strength):
+                continue
+            metrics = self._technical_metrics(bars)
+            if metrics is None:
+                continue
+            ma20_deviation, volume_ratio, lower_shadow_atr = metrics
+            if not (
+                self._config.ma20_deviation_min
+                <= ma20_deviation
+                <= self._config.ma20_deviation_max
+            ):
+                continue
+            if volume_ratio > self._config.max_volume_ratio_5d:
+                continue
+            if lower_shadow_atr < self._config.min_lower_shadow_atr:
+                continue
+
+            signal = LowAbsorbSignal(
+                signal_id=f"sig-{latest.symbol}-{trade_date:%Y%m%d}",
+                trade_date=trade_date,
+                stock_code=latest.symbol,
+                stock_name=latest.stock_name,
+                branch_name=latest.industry,
+                grade="A",
+                ma20_deviation_pct=ma20_deviation,
+                volume_ratio=volume_ratio,
+                lower_shadow_atr=lower_shadow_atr,
+                reason=(
+                    f"MA20 偏离 {ma20_deviation:.2%}，5日量比 {volume_ratio:.2f}，"
+                    f"下影线 {lower_shadow_atr:.2f} ATR，产业链分支未触发弱分支拦截。"
+                ),
+                status=SignalStatus.CANDIDATE,
+            )
+            plans.append(self._build_plan(signal, latest, trade_date))
+        return plans
+
+    def _bar_is_stale(self, bar: DailyBar, at: datetime) -> bool:
+        if bar.captured_at is None:
+            return True
+        return abs((at - bar.captured_at).total_seconds()) > self._config.max_data_staleness_seconds
+
+    def _technical_metrics(self, bars: list[DailyBar]) -> tuple[Decimal, Decimal, Decimal] | None:
+        latest = bars[-1]
+        ma20 = _mean([bar.close for bar in bars[-20:]])
+        if ma20 <= 0:
+            return None
+        previous_volumes = [bar.volume for bar in bars[-6:-1]]
+        if len(previous_volumes) < 5:
+            return None
+        avg_volume_5d = _mean(previous_volumes)
+        if avg_volume_5d <= 0 or latest.atr <= 0:
+            return None
+
+        ma20_deviation = (latest.close - ma20) / ma20
+        volume_ratio = latest.volume / avg_volume_5d
+        lower_shadow_atr = (min(latest.open, latest.close) - latest.low) / latest.atr
+        return ma20_deviation, volume_ratio, lower_shadow_atr
+
+    def _build_plan(self, signal: LowAbsorbSignal, latest: DailyBar, trade_date: date) -> ManualTradePlan:
+        intraday = self._data_provider.get_intraday_bars(latest.symbol, trade_date, interval="1m")
+        entry_low = min((bar.low for bar in intraday), default=latest.low)
+        entry_high = latest.close
+        stop_loss = latest.low
+        risk_per_standard_lot = calculate_open_stop_risk_cny(entry_price=entry_high, stop_loss=stop_loss)
+        rationale = f"生成依据：{signal.reason}"
+
+        return create_manual_trade_plan(
+            signal=signal,
+            trade_date=trade_date,
+            entry_low=entry_low,
+            entry_high=entry_high,
+            stop_loss=stop_loss,
+            planned_position_pct=self._config.max_single_position_weight,
+            max_risk_pct=self._config.max_single_trade_risk_pct,
+            initial_risk_cny=risk_per_standard_lot,
+            open_stop_risk_cny=risk_per_standard_lot,
+            r_multiple=Decimal("0"),
+            rationale=rationale,
+        )

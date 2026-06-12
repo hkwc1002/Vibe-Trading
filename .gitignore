@@ -51,7 +51,10 @@ data/parquet/
 data/backup/
 
 # Internal docs (plans, specs)
-docs/
+docs/*
+!docs/
+!docs/low_absorb_workflow_spec.md
+!docs/low_absorb_web_ui_guide.md
 !wiki/docs/
 !wiki/docs/**
 docs/screenshots/agent-run.png

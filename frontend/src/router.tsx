@@ -19,6 +19,24 @@ const Correlation = lazy(() =>
 const AlphaZoo = lazy(() =>
   import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
 );
+const LowAbsorbWorkbench = lazy(() =>
+  import("@/pages/low-absorb/Workbench").then((m) => ({ default: m.Workbench })),
+);
+const LowAbsorbSentiment = lazy(() =>
+  import("@/pages/low-absorb/Sentiment").then((m) => ({ default: m.Sentiment })),
+);
+const LowAbsorbChain = lazy(() =>
+  import("@/pages/low-absorb/Chain").then((m) => ({ default: m.Chain })),
+);
+const LowAbsorbBacktest = lazy(() =>
+  import("@/pages/low-absorb/Backtest").then((m) => ({ default: m.Backtest })),
+);
+const LowAbsorbReports = lazy(() =>
+  import("@/pages/low-absorb/Reports").then((m) => ({ default: m.Reports })),
+);
+const LowAbsorbSettings = lazy(() =>
+  import("@/pages/low-absorb/Settings").then((m) => ({ default: m.Settings })),
+);
 
 function PageLoader() {
   return (
@@ -50,6 +68,12 @@ export const router = createBrowserRouter([
       { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
       { path: "/alpha-zoo/compare", element: wrap(AlphaZoo) },
       { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
+      { path: "/low-absorb", element: wrap(LowAbsorbWorkbench) },
+      { path: "/low-absorb/sentiment", element: wrap(LowAbsorbSentiment) },
+      { path: "/low-absorb/chain", element: wrap(LowAbsorbChain) },
+      { path: "/low-absorb/backtest", element: wrap(LowAbsorbBacktest) },
+      { path: "/low-absorb/reports", element: wrap(LowAbsorbReports) },
+      { path: "/low-absorb/settings", element: wrap(LowAbsorbSettings) },
     ],
   },
 ]);

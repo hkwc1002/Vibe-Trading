@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { Activity, BarChart3, Bot, ChevronsLeft, ChevronsRight, ClipboardList, FileText, Gauge, Layers, Loader2, MessageSquare, Moon, Network, Pencil, Plus, Settings, SlidersHorizontal, Sun, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -16,6 +16,15 @@ const NAV = [
   { to: "/alpha-zoo", icon: Layers, label: "Alpha Zoo" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/correlation", icon: BarChart3, label: "Correlation Matrix" },
+];
+
+const LOW_ABSORB_NAV = [
+  { to: "/low-absorb", icon: ClipboardList, label: "交易工作台" },
+  { to: "/low-absorb/sentiment", icon: Gauge, label: "市场情绪" },
+  { to: "/low-absorb/chain", icon: Network, label: "AI 产业链" },
+  { to: "/low-absorb/backtest", icon: Activity, label: "策略回测" },
+  { to: "/low-absorb/reports", icon: FileText, label: "复盘报告" },
+  { to: "/low-absorb/settings", icon: SlidersHorizontal, label: "系统设置" },
 ];
 
 export function Layout() {
@@ -50,6 +59,12 @@ export function Layout() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  const isTopNavActive = (to: string) =>
+    to === "/" ? pathname === "/" : pathname === to || pathname.startsWith(`${to}/`);
+
+  const isLowAbsorbActive = (to: string) =>
+    to === "/low-absorb" ? pathname === to : pathname === to;
 
   const deleteSession = async (sid: string) => {
     try {
@@ -94,7 +109,7 @@ export function Layout() {
                 className={cn(
                   "flex items-center rounded-md text-sm transition-colors",
                   collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
-                  (to === "/" ? pathname === "/" : pathname.startsWith(to))
+                  isTopNavActive(to)
                     ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
@@ -105,6 +120,34 @@ export function Layout() {
               </Link>
             );
           })}
+        </nav>
+
+        <nav
+          aria-label="AI Low Absorb navigation"
+          className={cn("border-t space-y-0.5", collapsed ? "p-1" : "mt-1 p-2")}
+        >
+          {!collapsed && (
+            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              AI Low Absorb
+            </div>
+          )}
+          {LOW_ABSORB_NAV.map(({ to, icon: Icon, label }) => (
+            <Link
+              key={to}
+              to={to}
+              className={cn(
+                "flex items-center rounded-md text-sm transition-colors",
+                collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
+                isLowAbsorbActive(to)
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+              title={collapsed ? label : undefined}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {!collapsed && label}
+            </Link>
+          ))}
         </nav>
 
         {/* Sessions — hidden when collapsed */}

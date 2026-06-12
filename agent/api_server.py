@@ -3064,6 +3064,10 @@ async def stop_runner_endpoint(payload: LiveRunnerControlRequest):
 from src.api.alpha_routes import register_alpha_routes  # noqa: E402
 register_alpha_routes(app)
 
+# AI Low Absorb manual-execution workspace routes.
+from src.low_absorb.api import register_low_absorb_routes  # noqa: E402
+register_low_absorb_routes(app, dependencies=[Depends(require_auth)])
+
 
 # ============================================================================
 # Main Entry Point
