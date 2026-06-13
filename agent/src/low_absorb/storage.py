@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import MutableMapping
+from pathlib import Path
+from typing import Any, Protocol
+
+from .config import LowAbsorbConfig
 from .models import (
     CloseReport,
     FeishuNotificationResult,
@@ -10,6 +16,45 @@ from .models import (
     ManualPosition,
     ManualTradePlan,
 )
+
+
+class LowAbsorbRepository(Protocol):
+    """Repository contract for the manual-execution Low Absorb workspace."""
+
+    signals: MutableMapping[str, LowAbsorbSignal]
+    trade_plans: MutableMapping[str, ManualTradePlan]
+    fills: MutableMapping[str, ManualFill]
+    positions: MutableMapping[str, ManualPosition]
+    notifications: MutableMapping[str, FeishuNotificationResult]
+    reports: MutableMapping[str, CloseReport]
+
+    def clear(self) -> None:
+        """Remove all persisted workspace state."""
+
+    def seed(
+        self,
+        *,
+        signals: list[LowAbsorbSignal] | None = None,
+        trade_plans: list[ManualTradePlan] | None = None,
+        fills: list[ManualFill] | None = None,
+        positions: list[ManualPosition] | None = None,
+    ) -> None:
+        """Seed state for tests or local fixtures."""
+
+    def save(self) -> None:
+        """Persist current state if the repository is durable."""
+
+    def get_config(self) -> LowAbsorbConfig:
+        """Return strategy/runtime settings."""
+
+    def update_config(self, updates: dict[str, Any]) -> LowAbsorbConfig:
+        """Patch strategy/runtime settings."""
+
+    def get_webhook(self) -> str | None:
+        """Return the private Feishu webhook."""
+
+    def update_webhook(self, webhook: str | None) -> None:
+        """Persist the private Feishu webhook."""
 
 
 class InMemoryLowAbsorbStorage:
@@ -22,6 +67,8 @@ class InMemoryLowAbsorbStorage:
         self.positions: dict[str, ManualPosition] = {}
         self.notifications: dict[str, FeishuNotificationResult] = {}
         self.reports: dict[str, CloseReport] = {}
+        self._config = LowAbsorbConfig()
+        self._feishu_webhook: str | None = None
 
     def clear(self) -> None:
         self.signals.clear()
@@ -30,6 +77,7 @@ class InMemoryLowAbsorbStorage:
         self.positions.clear()
         self.notifications.clear()
         self.reports.clear()
+        self.save()
 
     def seed(
         self,
@@ -47,3 +95,92 @@ class InMemoryLowAbsorbStorage:
             self.fills[fill.fill_id] = fill
         for position in positions or []:
             self.positions[position.position_id] = position
+        self.save()
+
+    def save(self) -> None:
+        """No-op persistence hook for tests."""
+
+    def get_config(self) -> LowAbsorbConfig:
+        return self._config
+
+    def update_config(self, updates: dict[str, Any]) -> LowAbsorbConfig:
+        self._config = LowAbsorbConfig.model_validate({**self._config.model_dump(), **updates})
+        self.save()
+        return self._config
+
+    def get_webhook(self) -> str | None:
+        return self._feishu_webhook
+
+    def update_webhook(self, webhook: str | None) -> None:
+        self._feishu_webhook = webhook
+        self.save()
+
+
+class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
+    """JSON-backed repository for local/dev Low Absorb state."""
+
+    def __init__(self, path: str | Path | None = None) -> None:
+        self.path = Path(path) if path is not None else self.default_path()
+        super().__init__()
+        self._load()
+
+    @staticmethod
+    def default_path() -> Path:
+        return Path(__file__).resolve().parents[2] / ".ui_runtime" / "low_absorb" / "state.json"
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "signals": [item.model_dump(mode="json") for item in self.signals.values()],
+            "trade_plans": [item.model_dump(mode="json") for item in self.trade_plans.values()],
+            "fills": [item.model_dump(mode="json") for item in self.fills.values()],
+            "positions": [item.model_dump(mode="json") for item in self.positions.values()],
+            "notifications": [item.model_dump(mode="json") for item in self.notifications.values()],
+            "reports": [item.model_dump(mode="json") for item in self.reports.values()],
+            "settings": {
+                "config": self._config.model_dump(mode="json"),
+                "feishu_webhook": self._feishu_webhook,
+            },
+        }
+        temp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.replace(self.path)
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+
+        self.signals = {
+            item.signal_id: item
+            for item in (LowAbsorbSignal.model_validate(row) for row in payload.get("signals", []))
+        }
+        self.trade_plans = {
+            item.plan_id: item
+            for item in (ManualTradePlan.model_validate(row) for row in payload.get("trade_plans", []))
+        }
+        self.fills = {
+            item.fill_id: item
+            for item in (ManualFill.model_validate(row) for row in payload.get("fills", []))
+        }
+        self.positions = {
+            item.position_id: item
+            for item in (ManualPosition.model_validate(row) for row in payload.get("positions", []))
+        }
+        self.notifications = {
+            item.idempotency_key: item
+            for item in (FeishuNotificationResult.model_validate(row) for row in payload.get("notifications", []))
+        }
+        self.reports = {
+            item.report_id: item
+            for item in (CloseReport.model_validate(row) for row in payload.get("reports", []))
+        }
+        settings = payload.get("settings", {})
+        config_payload = settings.get("config")
+        if isinstance(config_payload, dict):
+            self._config = LowAbsorbConfig.model_validate(config_payload)
+        webhook = settings.get("feishu_webhook")
+        self._feishu_webhook = webhook if isinstance(webhook, str) and webhook else None

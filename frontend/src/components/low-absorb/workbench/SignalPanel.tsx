@@ -1,9 +1,17 @@
 import type { LowAbsorbSignal } from "@/types/lowAbsorb";
+import { cn } from "@/lib/utils";
 import { RiskBadge } from "./RiskSummaryCards";
 
 const HEADERS = ["股票代码", "股票名称", "所属分支", "信号等级", "MA20 偏离", "量比", "下影线 ATR", "入选理由", "拦截原因", "状态", "操作"];
 
-export function SignalPanel({ signals }: { signals: LowAbsorbSignal[] }) {
+type SignalPanelProps = {
+  signals: LowAbsorbSignal[];
+  selectedId?: string | null;
+  onSelect?: (signal: LowAbsorbSignal) => void;
+  onSendFeishu?: (signal: LowAbsorbSignal) => void;
+};
+
+export function SignalPanel({ signals, selectedId, onSelect, onSendFeishu }: SignalPanelProps) {
   return (
     <section className="rounded-lg border bg-card">
       <div className="border-b px-4 py-3">
@@ -21,7 +29,12 @@ export function SignalPanel({ signals }: { signals: LowAbsorbSignal[] }) {
           </thead>
           <tbody className="divide-y">
             {signals.map((signal) => (
-              <tr key={signal.id} data-testid={`signal-row-${signal.id}`} className="align-top">
+              <tr
+                key={signal.id}
+                data-testid={`signal-row-${signal.id}`}
+                className={cn("align-top", selectedId === signal.id && "bg-primary/5")}
+                onClick={() => onSelect?.(signal)}
+              >
                 <td className="whitespace-nowrap px-3 py-3 font-mono text-foreground">{signal.stockCode}</td>
                 <td className="whitespace-nowrap px-3 py-3 font-medium text-foreground">{signal.stockName}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{signal.branch}</td>
@@ -34,8 +47,8 @@ export function SignalPanel({ signals }: { signals: LowAbsorbSignal[] }) {
                 <td className="whitespace-nowrap px-3 py-3">{signal.status}</td>
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-1.5">
-                    <button type="button" className="rounded-md border px-2 py-1 text-xs hover:bg-muted">生成交易计划</button>
-                    <button type="button" className="rounded-md border px-2 py-1 text-xs hover:bg-muted">推送飞书</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); onSelect?.(signal); }} className="rounded-md border px-2 py-1 text-xs hover:bg-muted">生成交易计划</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); onSendFeishu?.(signal); }} className="rounded-md border px-2 py-1 text-xs hover:bg-muted">推送飞书</button>
                     <button type="button" className="rounded-md border px-2 py-1 text-xs hover:bg-muted">标记失效</button>
                   </div>
                 </td>
@@ -47,4 +60,3 @@ export function SignalPanel({ signals }: { signals: LowAbsorbSignal[] }) {
     </section>
   );
 }
-

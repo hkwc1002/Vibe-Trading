@@ -1,9 +1,16 @@
 import type { LowAbsorbPosition } from "@/types/lowAbsorb";
+import { cn } from "@/lib/utils";
 import { RiskBadge } from "./RiskSummaryCards";
 
 const HEADERS = ["股票", "成本", "现价", "止损", "仓位", "初始风险", "当前风险", "R 倍数", "10:00 监督状态", "操作"];
 
-export function PositionPanel({ positions }: { positions: LowAbsorbPosition[] }) {
+type PositionPanelProps = {
+  positions: LowAbsorbPosition[];
+  selectedId?: string | null;
+  onSelect?: (position: LowAbsorbPosition) => void;
+};
+
+export function PositionPanel({ positions, selectedId, onSelect }: PositionPanelProps) {
   return (
     <section className="rounded-lg border bg-card">
       <div className="border-b px-4 py-3">
@@ -21,7 +28,12 @@ export function PositionPanel({ positions }: { positions: LowAbsorbPosition[] })
           </thead>
           <tbody className="divide-y">
             {positions.map((position) => (
-              <tr key={position.id} data-testid={`position-row-${position.id}`} className="align-top">
+              <tr
+                key={position.id}
+                data-testid={`position-row-${position.id}`}
+                className={cn("align-top", selectedId === position.id && "bg-primary/5")}
+                onClick={() => onSelect?.(position)}
+              >
                 <td className="whitespace-nowrap px-3 py-3">
                   <div className="font-medium text-foreground">{position.stockName}</div>
                   <div className="mt-1 font-mono text-muted-foreground">{position.stockCode}</div>
@@ -50,4 +62,3 @@ export function PositionPanel({ positions }: { positions: LowAbsorbPosition[] })
     </section>
   );
 }
-

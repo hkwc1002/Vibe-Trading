@@ -69,7 +69,8 @@ function patch<T>(path: string, body: unknown): Promise<T> {
 
 export const lowAbsorbApi = {
   getSnapshot: () => request<LowAbsorbApiSnapshot>("/low-absorb/snapshot"),
-  scanTail: () => post<{ signals: LowAbsorbApiSignal[]; trade_plans: LowAbsorbApiTradePlan[] }>("/low-absorb/scan-tail"),
+  scanTail: (body?: { trade_date?: string; at?: string; symbols?: string[] }) =>
+    post<LowAbsorbApiSnapshot & { data_source?: string; message?: string }>("/low-absorb/scan-tail", body),
   listSignals: () => request<LowAbsorbApiSignal[]>("/low-absorb/signals"),
   getSignal: (signalId: string) => request<LowAbsorbApiSignal>(`/low-absorb/signals/${encodeURIComponent(signalId)}`),
   patchSignal: (signalId: string, body: Partial<LowAbsorbApiSignal>) =>

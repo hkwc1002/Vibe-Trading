@@ -189,11 +189,72 @@ export type LowAbsorbBacktestMock = {
   suggestions: string[];
 };
 
-export type LowAbsorbApiSignal = Record<string, unknown>;
-export type LowAbsorbApiTradePlan = Record<string, unknown>;
+export type LowAbsorbApiSignal = {
+  signal_id: string;
+  trade_date: string;
+  stock_code: string;
+  stock_name: string;
+  branch_name: string;
+  grade: string;
+  ma20_deviation_pct: string | number;
+  volume_ratio: string | number;
+  lower_shadow_atr: string | number;
+  reason: string;
+  intercept_reasons?: string[];
+  status: string;
+};
+
+export type LowAbsorbApiTradePlan = {
+  plan_id: string;
+  signal_id: string;
+  trade_date: string;
+  stock_code: string;
+  stock_name: string;
+  entry_low: string | number;
+  entry_high: string | number;
+  stop_loss: string | number;
+  planned_position_pct: string | number;
+  max_risk_pct: string | number;
+  initial_risk_cny: string | number;
+  open_stop_risk_cny: string | number;
+  r_multiple: string | number;
+  rationale: string;
+  manual_order_text: string;
+  status: string;
+};
+
 export type LowAbsorbApiManualFill = Record<string, unknown>;
-export type LowAbsorbApiPosition = Record<string, unknown>;
-export type LowAbsorbApiRisk = Record<string, unknown>;
+
+export type LowAbsorbApiPosition = {
+  position_id: string;
+  plan_id?: string | null;
+  stock_code: string;
+  stock_name: string;
+  avg_cost?: string | number | null;
+  cost_price?: string | number | null;
+  current_price?: string | number | null;
+  stop_loss?: string | number | null;
+  current_stop_price?: string | number | null;
+  quantity: number;
+  position_weight?: string | number | null;
+  position_pct?: string | number | null;
+  status: string;
+  notes?: string[];
+  note?: string;
+};
+
+export type LowAbsorbApiRisk = {
+  position_id: string;
+  stock_code: string;
+  stock_name: string;
+  initial_risk_amount: string | number;
+  current_risk_amount: string | number;
+  r_multiple: string | number;
+  risk_level: LowAbsorbRiskLevel;
+  needs_supervision: boolean;
+  supervision_status?: string;
+};
+
 export type LowAbsorbApiCloseReport = Record<string, unknown>;
 
 export type LowAbsorbApiSnapshot = {
@@ -262,8 +323,10 @@ export type LowAbsorbSupervisionRequest = {
 export type LowAbsorbApiSettings = {
   config: Record<string, unknown>;
   maskedWebhook: string | null;
+  webhookConfigured?: boolean;
 };
 
 export type LowAbsorbSettingsPatchRequest = {
   feishu_webhook?: string;
+  config?: Record<string, string>;
 };

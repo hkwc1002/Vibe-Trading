@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import os
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..data_provider import FixtureMarketDataProvider, IntradayBar
+from ..data_provider import ChainBranchStrength, DailyBar, FixtureMarketDataProvider, IntradayBar, MarketBreadth
+from ..config import LowAbsorbConfig
 from ..models import (
     CloseReport,
     LowAbsorbSignal,
@@ -24,11 +26,25 @@ from ..notifier import FeishuNotifier
 from ..reconciler import ManualFillReconciler
 from ..report import build_close_report
 from ..risk import calculate_position_risk
-from ..storage import InMemoryLowAbsorbStorage
+from ..scanner import LowAbsorbScanner
+from ..storage import InMemoryLowAbsorbStorage, JsonLowAbsorbStorage, LowAbsorbRepository
 from ..supervisor import build_position_risk_matrix, supervise_position_morning
 
 router = APIRouter(prefix="/low-absorb", tags=["low-absorb"])
-_STORAGE = InMemoryLowAbsorbStorage()
+
+
+def _default_storage() -> LowAbsorbRepository:
+    return JsonLowAbsorbStorage(os.getenv("LOW_ABSORB_STORAGE_PATH") or None)
+
+
+_STORAGE: LowAbsorbRepository = _default_storage()
+_DATA_PROVIDER = None
+
+
+class ScanTailRequest(BaseModel):
+    trade_date: date | None = None
+    at: datetime | None = None
+    symbols: list[str] | None = None
 
 
 class ManualFillRequest(BaseModel):
@@ -84,6 +100,20 @@ def reset_workbench_state() -> None:
     _STORAGE.clear()
 
 
+def set_workbench_storage(storage: LowAbsorbRepository, *, data_provider=None) -> None:
+    """Inject Low Absorb storage/provider for tests and local runtime wiring."""
+
+    global _STORAGE, _DATA_PROVIDER
+    _STORAGE = storage
+    _DATA_PROVIDER = data_provider
+
+
+def get_workbench_storage() -> LowAbsorbRepository:
+    """Return the active Low Absorb repository."""
+
+    return _STORAGE
+
+
 def seed_workbench_state(
     *,
     signals: list[LowAbsorbSignal] | None = None,
@@ -105,11 +135,12 @@ def _get_plan(plan_id: str) -> ManualTradePlan:
 
 def _replace_plan(plan: ManualTradePlan) -> ManualTradePlan:
     _STORAGE.trade_plans[plan.plan_id] = plan
+    _STORAGE.save()
     return plan
 
 
 def _notifier() -> FeishuNotifier:
-    return FeishuNotifier(storage=_STORAGE)
+    return FeishuNotifier(webhook_url=_STORAGE.get_webhook(), storage=_STORAGE)
 
 
 def _get_signal(signal_id: str) -> LowAbsorbSignal:
@@ -130,6 +161,15 @@ def _get_latest_report() -> CloseReport:
     if not _STORAGE.reports:
         raise HTTPException(status_code=404, detail="close report not found")
     return list(_STORAGE.reports.values())[-1]
+
+
+def _get_report(report_id: str | None = None) -> CloseReport:
+    if report_id:
+        report = _STORAGE.reports.get(report_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="close report not found")
+        return report
+    return _get_latest_report()
 
 
 def _request_price(request: ManualFillRequest) -> Decimal:
@@ -190,6 +230,80 @@ def _provider_from_supervision_request(position: ManualPosition, request: Positi
     )
 
 
+def _fixture_provider_for_scan(trade_date: date, at: datetime) -> FixtureMarketDataProvider:
+    symbol = "601138"
+    bars: list[DailyBar] = []
+    start = trade_date - timedelta(days=25)
+    for idx in range(19):
+        bars.append(
+            DailyBar(
+                symbol=symbol,
+                trade_date=start + timedelta(days=idx),
+                open=Decimal("20.00"),
+                high=Decimal("20.30"),
+                low=Decimal("19.80"),
+                close=Decimal("20.00"),
+                volume=Decimal("1000000"),
+                atr=Decimal("1.00"),
+                industry="AI 服务器",
+                stock_name="工业富联",
+                captured_at=at,
+            )
+        )
+    bars.append(
+        DailyBar(
+            symbol=symbol,
+            trade_date=trade_date,
+            open=Decimal("20.30"),
+            high=Decimal("20.55"),
+            low=Decimal("19.50"),
+            close=Decimal("20.12"),
+            volume=Decimal("600000"),
+            atr=Decimal("1.00"),
+            industry="AI 服务器",
+            stock_name="工业富联",
+            captured_at=at,
+        )
+    )
+    return FixtureMarketDataProvider(
+        symbols=[symbol],
+        market_breadth=MarketBreadth(
+            trade_date=trade_date,
+            captured_at=at,
+            total_market_turnover_cny=Decimal("600000000000"),
+            limit_break_rate=Decimal("0.20"),
+        ),
+        daily_bars={symbol: bars},
+        intraday_bars={
+            symbol: [
+                IntradayBar(
+                    symbol=symbol,
+                    trade_date=trade_date,
+                    at=at,
+                    open=Decimal("19.95"),
+                    high=Decimal("20.10"),
+                    low=Decimal("19.72"),
+                    close=Decimal("20.02"),
+                    volume=Decimal("120000"),
+                )
+            ]
+        },
+        chain_strength=[
+            ChainBranchStrength(
+                branch_name="AI 服务器",
+                rank=1,
+                total_branches=3,
+                slope=Decimal("0.08"),
+                relative_strength=Decimal("1.20"),
+            )
+        ],
+    )
+
+
+def _scan_provider(trade_date: date, at: datetime):
+    return _DATA_PROVIDER or _fixture_provider_for_scan(trade_date, at)
+
+
 def _supervise_position(position: ManualPosition, request: PositionSupervisionRequest) -> dict[str, object]:
     result = supervise_position_morning(
         position=position,
@@ -229,8 +343,27 @@ def get_snapshot() -> dict[str, list[object]]:
 
 
 @router.post("/scan-tail")
-def scan_tail_placeholder() -> dict[str, object]:
-    return {"signals": [], "trade_plans": [], "message": "scan-tail requires an injected market data provider"}
+def scan_tail(request: ScanTailRequest | None = None) -> dict[str, object]:
+    request = request or ScanTailRequest()
+    trade_date = request.trade_date or date.today()
+    config = _STORAGE.get_config()
+    scan_at = request.at or datetime.combine(trade_date, config.scan_time)
+    provider = _scan_provider(trade_date, scan_at)
+    result = LowAbsorbScanner(provider, config).scan_tail_session_with_signals(
+        trade_date,
+        at=scan_at,
+        symbols=request.symbols,
+    )
+    for signal in result.signals:
+        _STORAGE.signals[signal.signal_id] = signal
+    for plan in result.trade_plans:
+        _STORAGE.trade_plans[plan.plan_id] = plan
+    _STORAGE.save()
+    return {
+        **get_workbench(),
+        "data_source": "fixture" if isinstance(provider, FixtureMarketDataProvider) else "provider",
+        "message": f"generated {len(result.signals)} signals and {len(result.trade_plans)} manual trade plans",
+    }
 
 
 @router.get("/signals")
@@ -249,12 +382,14 @@ def patch_signal(signal_id: str, request: SignalPatchRequest) -> LowAbsorbSignal
     updates = request.model_dump(exclude_unset=True, exclude_none=True)
     patched = signal.model_copy(update=updates)
     _STORAGE.signals[patched.signal_id] = patched
+    _STORAGE.save()
     return patched
 
 
 @router.post("/trade-plans")
 def create_trade_plan(plan: ManualTradePlan) -> ManualTradePlan:
     _STORAGE.trade_plans[plan.plan_id] = plan
+    _STORAGE.save()
     return plan
 
 
@@ -339,6 +474,7 @@ def patch_position(position_id: str, request: PositionPatchRequest) -> ManualPos
     updates = request.model_dump(exclude_unset=True, exclude_none=True)
     patched = position.model_copy(update=updates)
     _STORAGE.positions[patched.position_id] = patched
+    _STORAGE.save()
     return patched
 
 
@@ -357,6 +493,7 @@ def close_position(position_id: str, request: PositionCloseRequest | None = None
         }
     )
     _STORAGE.positions[closed.position_id] = closed
+    _STORAGE.save()
     return closed
 
 
@@ -387,12 +524,13 @@ def create_close_report(trade_date: date):
         review_items=["复核人工成交回填、R 风险矩阵和次日 10:00 监督项。"],
     )
     _STORAGE.reports[report.report_id] = report
+    _STORAGE.save()
     return report
 
 
 @router.post("/reports/close/notify")
-def notify_close_report(force: bool = False):
-    return _notifier().send_close_report(report=_get_latest_report(), force=force)
+def notify_close_report(report_id: str | None = None, force: bool = False):
+    return _notifier().send_close_report(report=_get_report(report_id), force=force)
 
 
 @router.post("/positions/{position_id}/risk-alert")

@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from .models import ManualFill, ManualPosition, ManualTradePlan, PositionStatus
-from .storage import InMemoryLowAbsorbStorage
+from .storage import LowAbsorbRepository
 
 CENT = Decimal("0.01")
 
@@ -18,14 +18,17 @@ def _money(value: Decimal) -> Decimal:
 class ManualFillReconciler:
     """Apply user-recorded manual fills to the manual position book."""
 
-    def __init__(self, storage: InMemoryLowAbsorbStorage) -> None:
+    def __init__(self, storage: LowAbsorbRepository) -> None:
         self.storage = storage
 
     def record_fill(self, fill: ManualFill) -> ManualPosition:
         self.storage.fills[fill.fill_id] = fill
         if fill.side == "BUY":
-            return self._record_buy(fill)
-        return self._record_sell(fill)
+            position = self._record_buy(fill)
+        else:
+            position = self._record_sell(fill)
+        self.storage.save()
+        return position
 
     def _record_buy(self, fill: ManualFill) -> ManualPosition:
         existing = self._find_open_position(fill.stock_code)

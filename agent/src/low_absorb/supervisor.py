@@ -17,10 +17,17 @@ def _pct(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.0001"))
 
 
-def _latest_bar(bars: list[IntradayBar]) -> IntradayBar:
+def _first_morning_bar(bars: list[IntradayBar], config: LowAbsorbConfig) -> IntradayBar:
     if not bars:
         raise ValueError("intraday bars are required")
-    return sorted(bars, key=lambda bar: bar.at)[-1]
+    morning_bars = [
+        bar
+        for bar in bars
+        if config.anti_noise_start <= bar.at.time() <= config.anti_noise_end
+    ]
+    if not morning_bars:
+        raise ValueError("09:30-10:00 intraday bar is required")
+    return sorted(morning_bars, key=lambda bar: bar.at)[0]
 
 
 def supervise_position_morning(
@@ -35,7 +42,7 @@ def supervise_position_morning(
 
     config = config or LowAbsorbConfig()
     bars = provider.get_intraday_bars(position.stock_code, trade_date, "30m")
-    bar = _latest_bar(bars)
+    bar = _first_morning_bar(bars, config)
     open_price = bar.open
     current_price = bar.close
     stop_price = position.current_stop_price or position.stop_loss
