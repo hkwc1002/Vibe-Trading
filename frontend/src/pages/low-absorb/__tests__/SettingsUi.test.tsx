@@ -62,8 +62,8 @@ describe("Low Absorb Settings UI", () => {
     render(<Settings />);
     const user = userEvent.setup();
 
-    await screen.findByLabelText("飞书 Webhook");
-    await user.type(screen.getByLabelText("飞书 Webhook"), "https://open.feishu.cn/open-apis/bot/v2/hook/secret-token");
+    await screen.findByLabelText("飞书机器人地址");
+    await user.type(screen.getByLabelText("飞书机器人地址"), "https://open.feishu.cn/open-apis/bot/v2/hook/secret-token");
     await user.clear(screen.getByLabelText("炸板率上限"));
     await user.type(screen.getByLabelText("炸板率上限"), "0.33");
     await user.click(screen.getByRole("button", { name: "保存设置" }));

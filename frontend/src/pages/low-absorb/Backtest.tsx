@@ -20,7 +20,7 @@ export function Backtest() {
   return (
     <LowAbsorbPageShell
       title="策略回测"
-      description="展示低吸策略回测指标、参数、历史信号、敏感性、分支归因和改进建议的 mock 工作区。"
+      description="展示低吸策略回测指标、参数、历史信号、敏感性、分支归因和改进建议的示例工作区。"
     >
       <div className="flex flex-wrap gap-2 border-b pb-2">
         {TABS.map((tab) => (

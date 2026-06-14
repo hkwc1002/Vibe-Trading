@@ -41,7 +41,7 @@ const LowAbsorbSettings = lazy(() =>
 function PageLoader() {
   return (
     <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-      Loading…
+      正在加载…
     </div>
   );
 }

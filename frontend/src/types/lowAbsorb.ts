@@ -6,6 +6,10 @@ export type LowAbsorbDashboardCard = {
   value: string;
   detail: string;
   riskLevel: LowAbsorbRiskLevel;
+  currentStatus?: string;
+  keyMetrics?: string[];
+  trend?: string;
+  nextAction?: string;
 };
 
 export type LowAbsorbTask = {
@@ -29,6 +33,13 @@ export type LowAbsorbSignal = {
   interceptReason: string;
   status: string;
   riskLevel: LowAbsorbRiskLevel;
+  chainExplanation?: string;
+  branchStrength?: string;
+  costSignalWeight?: string;
+  priorityScore?: string;
+  downgradeReason?: string;
+  blockReason?: string;
+  sectorRole?: string;
 };
 
 export type LowAbsorbFeishuPreview = {
@@ -52,6 +63,13 @@ export type LowAbsorbTradePlan = {
   manualOrderText: string;
   riskLevel: LowAbsorbRiskLevel;
   feishuPreview: LowAbsorbFeishuPreview;
+  chainExplanation?: string;
+  branchStrength?: string;
+  costSignalWeight?: string;
+  priorityScore?: string;
+  downgradeReason?: string;
+  blockReason?: string;
+  sectorRole?: string;
 };
 
 export type LowAbsorbPosition = {
@@ -110,6 +128,43 @@ export type LowAbsorbSentimentMock = {
   rules: string[];
 };
 
+export type LowAbsorbSentimentGauge = {
+  id: string;
+  label: string;
+  score: number | string;
+  status: string;
+  detail: string;
+};
+
+export type LowAbsorbInstrumentPanel = {
+  id: string;
+  label: string;
+  value: string | number;
+  status: string;
+  explanation: string;
+};
+
+export type LowAbsorbSentimentEvent = {
+  id: string;
+  time: string;
+  source: string;
+  title: string;
+  impact: string;
+};
+
+export type LowAbsorbSentimentSnapshot = {
+  tradingPermission: {
+    status: string;
+    summary: string;
+    nextAction: string;
+    blockedReasons?: string[];
+  };
+  gauges: LowAbsorbSentimentGauge[];
+  instrumentPanels: LowAbsorbInstrumentPanel[];
+  socialEvents: LowAbsorbSentimentEvent[];
+  newsEvents: LowAbsorbSentimentEvent[];
+};
+
 export type LowAbsorbChainBranch = {
   id: string;
   name: string;
@@ -136,6 +191,68 @@ export type LowAbsorbChainMock = {
   branches: LowAbsorbChainBranch[];
   stockMappings: LowAbsorbChainStockMapping[];
   rules: string[];
+};
+
+export type LowAbsorbCostChainComponent = {
+  component: string;
+  cost_weight: string | number;
+  cost_weight_range?: Array<string | number>;
+  cost_increase_vs_previous_generation: string | number;
+  related_sector: string;
+  a_share_leaders: string[];
+  tradable_mainboard_mapping: string[];
+  signal_weight: string | number;
+  data_source: string;
+  source_type?: string;
+  source_url?: string;
+  source_title?: string;
+  confidence?: "high" | "medium" | "low" | string;
+  is_estimated?: boolean;
+  methodology_note?: string;
+  as_of: string;
+};
+
+export type LowAbsorbCostChainModel = {
+  version: string;
+  is_editable: boolean;
+  components: LowAbsorbCostChainComponent[];
+};
+
+export type LowAbsorbChainSectorStock = {
+  role: "leader" | "core_middle_cap" | "sentiment_stock" | "mainboard_mapping" | "watch_only";
+  stock_code: string;
+  stock_name: string;
+  strength_score: string | number;
+  volume_condition: string;
+  low_absorb_suitability: string;
+  reason: string;
+  current_recommendation: string;
+};
+
+export type LowAbsorbChainSector = {
+  sector_id: string;
+  label: string;
+  sector_index: string;
+  price_change_pct: string | number;
+  turnover_cny: string | number;
+  volume_ratio: string | number;
+  rs_strength: string | number;
+  fund_flow_cny: string | number;
+  trend_slope: string | number;
+  limit_up_count: number;
+  limit_break_count: number;
+  stocks: LowAbsorbChainSectorStock[];
+};
+
+export type LowAbsorbChainSnapshot = {
+  activeVersion: string;
+  sectorTabs: Array<{ id: string; label: string }>;
+  costModels: LowAbsorbCostChainModel[];
+  costTable: LowAbsorbCostChainComponent[];
+  sectors: LowAbsorbChainSector[];
+  topologyNodes?: string[];
+  branches?: LowAbsorbChainBranch[];
+  stockMappings?: LowAbsorbChainStockMapping[];
 };
 
 export type LowAbsorbBacktestMetric = {
@@ -202,6 +319,13 @@ export type LowAbsorbApiSignal = {
   reason: string;
   intercept_reasons?: string[];
   status: string;
+  chain_explanation?: string;
+  branch_strength?: string | number;
+  cost_signal_weight?: string | number;
+  priority_score?: string | number;
+  downgrade_reason?: string;
+  block_reason?: string;
+  sector_role?: string;
 };
 
 export type LowAbsorbApiTradePlan = {
@@ -221,6 +345,13 @@ export type LowAbsorbApiTradePlan = {
   rationale: string;
   manual_order_text: string;
   status: string;
+  chain_explanation?: string;
+  branch_strength?: string | number;
+  cost_signal_weight?: string | number;
+  priority_score?: string | number;
+  downgrade_reason?: string;
+  block_reason?: string;
+  sector_role?: string;
 };
 
 export type LowAbsorbApiManualFill = Record<string, unknown>;
@@ -264,6 +395,8 @@ export type LowAbsorbApiSnapshot = {
   risk_matrix: LowAbsorbApiRisk[];
   notifications: LowAbsorbApiNotificationResult[];
   reports: LowAbsorbApiCloseReport[];
+  sentiment?: Partial<LowAbsorbSentimentSnapshot>;
+  chain?: Partial<LowAbsorbChainSnapshot>;
 };
 
 export type LowAbsorbApiNotificationResult = {

@@ -56,6 +56,6 @@ describe("ErrorBoundary", () => {
         <ThrowEmpty />
       </ErrorBoundary>,
     );
-    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.getByText("页面渲染出错")).toBeInTheDocument();
   });
 });

@@ -2,8 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
-import { LOW_ABSORB_MOCK } from "@/mocks/lowAbsorb";
 import { lowAbsorbApi } from "@/lib/lowAbsorbApi";
+import { LOW_ABSORB_MOCK } from "@/mocks/lowAbsorb";
 import type { LowAbsorbApiSnapshot } from "@/types/lowAbsorb";
 import { Workbench } from "../Workbench";
 
@@ -26,7 +26,7 @@ const API_SIGNAL = {
   trade_date: "2026-06-12",
   stock_code: "601138",
   stock_name: "工业富联",
-  branch_name: "AI 服务器",
+  branch_name: "服务器ODM",
   grade: "A",
   ma20_deviation_pct: "0.006",
   volume_ratio: "0.60",
@@ -34,6 +34,11 @@ const API_SIGNAL = {
   reason: "尾盘低吸漏斗通过",
   intercept_reasons: [],
   status: "CANDIDATE",
+  chain_explanation: "AI 产业链：服务器ODM 分支 RS 82，成本链权重 0.70，同技术条件下优先。",
+  branch_strength: "82",
+  cost_signal_weight: "0.70",
+  priority_score: "88.5",
+  sector_role: "leader",
 };
 
 const API_PLAN = {
@@ -53,6 +58,11 @@ const API_PLAN = {
   rationale: "生成依据：尾盘低吸漏斗通过",
   manual_order_text: "601138 工业富联，人工低吸区间 19.72-20.12，参考止损 19.50。",
   status: "RECOMMENDED",
+  chain_explanation: "AI 产业链：服务器ODM 分支 RS 82，成本链权重 0.70，同技术条件下优先。",
+  branch_strength: "82",
+  cost_signal_weight: "0.70",
+  priority_score: "88.5",
+  sector_role: "leader",
 };
 
 const API_POSITION = {
@@ -122,7 +132,7 @@ describe("Low Absorb Workbench UI", () => {
     expect((await screen.findAllByText("工业富联")).length).toBeGreaterThan(0);
     expect(api.getSnapshot).toHaveBeenCalledTimes(1);
     for (const label of [
-      "市场状态",
+      "交易许可",
       "今日信号",
       "待推送飞书",
       "待成交回填",
@@ -166,7 +176,7 @@ describe("Low Absorb Workbench UI", () => {
     expect(screen.getAllByRole("heading", { name: "人工持仓" }).length).toBeGreaterThan(0);
     const positionRow = screen.getByTestId("position-row-pos-601138-plan-601138-20260612");
     expect(within(positionRow).getByText("工业富联")).toBeInTheDocument();
-    expect(screen.getByText("R 倍数")).toBeInTheDocument();
+    expect(screen.getAllByText("R 倍数").length).toBeGreaterThan(0);
     expect(screen.getAllByText("记录卖出").length).toBeGreaterThan(0);
     expect(screen.getAllByText("调整备注").length).toBeGreaterThan(0);
     expect(screen.getAllByText("生成风控提醒").length).toBeGreaterThan(0);
@@ -187,6 +197,7 @@ describe("Low Absorb Workbench UI", () => {
     expect(screen.getByText("人工成交记录")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "交易计划详情" })).toBeInTheDocument();
     expect(screen.getByText("统一动作")).toBeInTheDocument();
+    expect(screen.getByText("AI 产业链解释")).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText("成交价格"));
     await user.type(screen.getByLabelText("成交价格"), "19.88");

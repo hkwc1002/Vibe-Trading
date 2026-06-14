@@ -1,7 +1,7 @@
 import type { LowAbsorbMonitorPreview } from "@/types/lowAbsorb";
 
 export function SocialMonitorPreview({ items }: { items: LowAbsorbMonitorPreview[] }) {
-  return <MonitorPreview title="社交账号监听 preview" items={items} />;
+  return <MonitorPreview title="社交账号监听预览" items={items} />;
 }
 
 function MonitorPreview({ title, items }: { title: string; items: LowAbsorbMonitorPreview[] }) {

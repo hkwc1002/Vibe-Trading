@@ -19,10 +19,26 @@ interface Props {
 
 function formatElapsed(seconds: number | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "-";
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}秒`;
   const mins = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
-  return `${mins}m ${secs}s`;
+  return `${mins}分 ${secs}秒`;
+}
+
+function displayStatus(status: SwarmAgentDisplayStatus | SwarmRunStatus["status"]): string {
+  const map: Record<string, string> = {
+    done: "完成",
+    failed: "失败",
+    blocked: "阻塞",
+    retry: "重试",
+    running: "运行中",
+    cancelled: "已取消",
+    waiting: "等待中",
+    completed: "已完成",
+    pending: "待处理",
+    unknown: "未知",
+  };
+  return map[status] || String(status).replace(/_/g, " ");
 }
 
 function statusTone(status: SwarmAgentDisplayStatus): string {
@@ -97,13 +113,13 @@ export const SwarmStatusCard = memo(function SwarmStatusCard({ status }: Props) 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-semibold text-foreground">{status.preset}</span>
-            <span className={["shrink-0 text-xs font-medium capitalize", runTone(status.status)].join(" ")}>
-              {status.status.replace(/_/g, " ")}
+            <span className={["shrink-0 text-xs font-medium", runTone(status.status)].join(" ")}>
+              {displayStatus(status.status)}
             </span>
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <Clock className="h-3 w-3" />
-            <span>{done}/{total || 0} agents</span>
+            <span>{done}/{total || 0} 个智能体</span>
           </div>
         </div>
 
@@ -113,22 +129,22 @@ export const SwarmStatusCard = memo(function SwarmStatusCard({ status }: Props) 
             total={Math.max(total, 1)}
             height="xs"
             showCount
-            ariaLabel="Swarm agent progress"
+            ariaLabel="智能体团队进度"
           />
           <div className="text-right font-mono text-[11px] text-muted-foreground">
-            Layer {layerCurrent}/{layerTotal}
+            层级 {layerCurrent}/{layerTotal}
           </div>
         </div>
 
         <div className="mt-3 overflow-x-auto">
           <div className="min-w-[620px]">
             <div className="grid grid-cols-[10rem_7rem_9rem_5rem_4rem_minmax(0,1fr)] gap-2 border-b pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <span>Agent</span>
-              <span>Status</span>
-              <span>Tool</span>
-              <span className="text-right">Time</span>
-              <span className="text-right">Iters</span>
-              <span>Output</span>
+              <span>智能体</span>
+              <span>状态</span>
+              <span>工具</span>
+              <span className="text-right">耗时</span>
+              <span className="text-right">轮次</span>
+              <span>输出</span>
             </div>
             <div className="divide-y">
               {status.agents.map((agent) => (
@@ -141,9 +157,9 @@ export const SwarmStatusCard = memo(function SwarmStatusCard({ status }: Props) 
                     {agent.role && <div className="truncate text-[10px] text-muted-foreground">{agent.role}</div>}
                   </div>
                   <div>
-                    <span className={["inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize", statusTone(agent.status)].join(" ")}>
+                    <span className={["inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium", statusTone(agent.status)].join(" ")}>
                       <StatusIcon status={agent.status} />
-                      {agent.status}
+                      {displayStatus(agent.status)}
                     </span>
                   </div>
                   <div className="truncate font-mono text-[11px] text-muted-foreground" title={agent.tool || ""}>
@@ -162,7 +178,7 @@ export const SwarmStatusCard = memo(function SwarmStatusCard({ status }: Props) 
               ))}
               {status.agents.length === 0 && (
                 <div className="py-3 text-xs text-muted-foreground">
-                  Waiting for agent events...
+                  等待智能体事件...
                 </div>
               )}
             </div>

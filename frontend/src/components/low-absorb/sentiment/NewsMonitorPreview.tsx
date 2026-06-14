@@ -3,7 +3,7 @@ import type { LowAbsorbMonitorPreview } from "@/types/lowAbsorb";
 export function NewsMonitorPreview({ items }: { items: LowAbsorbMonitorPreview[] }) {
   return (
     <section className="rounded-lg border bg-card p-4 shadow-sm">
-      <h2 className="text-sm font-semibold text-foreground">新闻事件监听 preview</h2>
+      <h2 className="text-sm font-semibold text-foreground">新闻事件监听预览</h2>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {items.map((item) => (
           <article key={item.id} className="rounded-md border bg-background p-3">

@@ -10,8 +10,8 @@ import {
 
 describe("getMetricLabel", () => {
   it("returns human label for known keys", () => {
-    expect(getMetricLabel("sharpe")).toBe("Sharpe");
-    expect(getMetricLabel("max_drawdown")).toBe("Max DD");
+    expect(getMetricLabel("sharpe")).toBe("夏普比率");
+    expect(getMetricLabel("max_drawdown")).toBe("最大回撤");
   });
 
   it("returns raw key for unknown keys", () => {
@@ -133,19 +133,19 @@ describe("formatTimestamp", () => {
 
 describe("abbreviateNum", () => {
   it("abbreviates billions", () => {
-    expect(abbreviateNum(1_500_000_000)).toBe("1.5B");
+    expect(abbreviateNum(1_500_000_000)).toBe("15.0亿");
   });
   it("abbreviates millions", () => {
-    expect(abbreviateNum(2_300_000)).toBe("2.3M");
+    expect(abbreviateNum(2_300_000)).toBe("230.0万");
   });
   it("abbreviates thousands", () => {
-    expect(abbreviateNum(15_000)).toBe("15K");
+    expect(abbreviateNum(15_000)).toBe("1.5万");
   });
   it("returns locale string for small numbers", () => {
     expect(abbreviateNum(999)).toBe("999");
   });
   it("handles negative values", () => {
-    expect(abbreviateNum(-2_500_000)).toBe("-2.5M");
+    expect(abbreviateNum(-2_500_000)).toBe("-250.0万");
   });
 });
 

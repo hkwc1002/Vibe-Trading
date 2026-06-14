@@ -171,11 +171,11 @@ export const LOW_ABSORB_SENTIMENT_MOCK: LowAbsorbSentimentMock = {
     { id: "social-2", source: "社交账号监听", title: "CPO 分歧扩大", status: "观察", detail: "用于后续接入人工维护账号清单。" },
   ],
   newsPreviews: [
-    { id: "news-1", source: "新闻事件监听", title: "海外算力订单线索", status: "预览", detail: "当前为 mock 事件，不接外部新闻 API。" },
+    { id: "news-1", source: "新闻事件监听", title: "海外算力订单线索", status: "预览", detail: "当前为示例事件，不接外部新闻接口。" },
     { id: "news-2", source: "新闻事件监听", title: "产业链价格变化", status: "观察", detail: "预留事件归因和人工复核入口。" },
   ],
   rules: [
-    "总成交额低于阈值时，14:45 扫描 fail-closed。",
+    "总成交额低于阈值时，14:45 扫描按失败关闭处理。",
     "炸板率超过阈值时，不生成新的人工交易计划。",
     "AI 资金温度只作为闸门，不替代个股技术过滤。",
   ],
@@ -209,12 +209,12 @@ export const LOW_ABSORB_CHAIN_MOCK: LowAbsorbChainMock = {
 
 export const LOW_ABSORB_BACKTEST_MOCK: LowAbsorbBacktestMock = {
   metrics: [
-    { id: "win-rate", label: "胜率", value: "56.8%", detail: "仅为 mock 统计" },
+    { id: "win-rate", label: "胜率", value: "56.8%", detail: "仅为示例统计" },
     { id: "avg-r", label: "平均 R", value: "0.42R", detail: "未接真实回测引擎" },
-    { id: "drawdown", label: "最大回撤", value: "-6.4%", detail: "用于页面 contract 预览" },
+    { id: "drawdown", label: "最大回撤", value: "-6.4%", detail: "用于页面契约预览" },
     { id: "samples", label: "样本数", value: "148", detail: "覆盖近 18 个月信号" },
     { id: "profit-factor", label: "盈亏比", value: "1.36", detail: "按人工执行假设估算" },
-    { id: "best-branch", label: "最佳分支", value: "AI 服务器", detail: "分支归因 mock" },
+    { id: "best-branch", label: "最佳分支", value: "AI 服务器", detail: "分支归因示例" },
   ],
   parameters: [
     { id: "turnover", label: "成交额阈值", value: "8,000 亿", detail: "宏观闸门下限" },

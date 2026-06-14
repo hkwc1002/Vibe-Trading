@@ -29,8 +29,8 @@ describe("ToolProgressIndicator", () => {
     const tcs = [makeTc({ elapsed_s: 5 })];
     render(<ToolProgressIndicator toolCalls={tcs} />);
     expect(screen.getByRole("status")).toBeInTheDocument();
-    expect(screen.getByText(/Run backtest/)).toBeInTheDocument();
-    expect(screen.getByText("5s")).toBeInTheDocument();
+    expect(screen.getByText(/运行回测/)).toBeInTheDocument();
+    expect(screen.getByText("5秒")).toBeInTheDocument();
   });
 
   it("renders multiple running tools with header", () => {
@@ -39,9 +39,9 @@ describe("ToolProgressIndicator", () => {
       makeTc({ id: "tc-2", tool: "write_file" }),
     ];
     render(<ToolProgressIndicator toolCalls={tcs} />);
-    expect(screen.getByText("2 tools running")).toBeInTheDocument();
-    expect(screen.getByText(/Run command/)).toBeInTheDocument();
-    expect(screen.getByText(/Generate code/)).toBeInTheDocument();
+    expect(screen.getByText("2 个工具运行中")).toBeInTheDocument();
+    expect(screen.getByText(/执行命令/)).toBeInTheDocument();
+    expect(screen.getByText(/生成代码/)).toBeInTheDocument();
   });
 
   it("shows overflow indicator for > 3 running tools", () => {
@@ -52,7 +52,7 @@ describe("ToolProgressIndicator", () => {
       makeTc({ id: "tc-4", tool: "read_file" }),
     ];
     render(<ToolProgressIndicator toolCalls={tcs} />);
-    expect(screen.getByText(/… \+2 more/)).toBeInTheDocument();
+    expect(screen.getByText(/… 另有 2 个/)).toBeInTheDocument();
   });
 
   it("shows determinate progress bar when progress data exists", () => {

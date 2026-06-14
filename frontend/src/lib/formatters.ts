@@ -1,19 +1,19 @@
 export const METRIC_LABELS: Record<string, string> = {
-  total_return: "Total Return",
-  annual_return: "Annual",
-  sharpe: "Sharpe",
-  max_drawdown: "Max DD",
-  win_rate: "Win Rate",
-  trade_count: "Trades",
-  final_value: "Final Value",
-  calmar: "Calmar",
-  sortino: "Sortino",
-  profit_loss_ratio: "P/L Ratio",
-  max_consecutive_loss: "Max Consec. Loss",
-  avg_holding_days: "Avg Hold Days",
-  benchmark_return: "Benchmark",
-  excess_return: "Excess Return",
-  information_ratio: "IR",
+  total_return: "总收益率",
+  annual_return: "年化收益率",
+  sharpe: "夏普比率",
+  max_drawdown: "最大回撤",
+  win_rate: "胜率",
+  trade_count: "交易次数",
+  final_value: "期末资产",
+  calmar: "卡玛比率",
+  sortino: "索提诺比率",
+  profit_loss_ratio: "盈亏比",
+  max_consecutive_loss: "最大连续亏损",
+  avg_holding_days: "平均持仓天数",
+  benchmark_return: "基准收益",
+  excess_return: "超额收益",
+  information_ratio: "信息比率",
 };
 
 export function getMetricLabel(k: string): string {
@@ -63,8 +63,7 @@ export function formatTimestamp(ts: number): string {
 
 export function abbreviateNum(v: number): string {
   const abs = Math.abs(v);
-  if (abs >= 1e9) return (v / 1e9).toFixed(1) + "B";
-  if (abs >= 1e6) return (v / 1e6).toFixed(1) + "M";
-  if (abs >= 1e4) return (v / 1e3).toFixed(0) + "K";
+  if (abs >= 1e8) return (v / 1e8).toFixed(1) + "亿";
+  if (abs >= 1e4) return (v / 1e4).toFixed(1) + "万";
   return v.toLocaleString();
 }

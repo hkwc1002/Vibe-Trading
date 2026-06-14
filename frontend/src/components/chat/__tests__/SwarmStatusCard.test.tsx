@@ -34,12 +34,12 @@ describe("SwarmStatusCard", () => {
     const html = renderToStaticMarkup(<SwarmStatusCard status={makeStatus()} />);
 
     expect(html).toContain("demo_team");
-    expect(html).toContain("running");
-    expect(html).toContain("waiting");
-    expect(html).toContain("done");
-    expect(html).toContain("failed");
-    expect(html).toContain("blocked");
-    expect(html).toContain("retry");
+    expect(html).toContain("运行中");
+    expect(html).toContain("等待中");
+    expect(html).toContain("完成");
+    expect(html).toContain("失败");
+    expect(html).toContain("阻塞");
+    expect(html).toContain("重试");
     expect(html).toContain("checking exposure");
     expect(html).toContain("missing data");
   });
@@ -47,7 +47,7 @@ describe("SwarmStatusCard", () => {
   it("shows empty state while waiting for events", () => {
     const html = renderToStaticMarkup(<SwarmStatusCard status={makeStatus({ agents: [] })} />);
 
-    expect(html).toContain("Waiting for agent events...");
+    expect(html).toContain("等待智能体事件...");
   });
 
   it("builds a card model from swarm.started payload", () => {

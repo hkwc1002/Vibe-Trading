@@ -7,11 +7,14 @@ import type {
   LowAbsorbApiSignal,
   LowAbsorbApiSnapshot,
   LowAbsorbApiTradePlan,
+  LowAbsorbChainSnapshot,
+  LowAbsorbCostChainComponent,
   LowAbsorbManualFillRequest,
   LowAbsorbPositionCloseRequest,
   LowAbsorbPositionPatchRequest,
   LowAbsorbSettingsPatchRequest,
   LowAbsorbSupervisionRequest,
+  LowAbsorbSentimentSnapshot,
 } from "@/types/lowAbsorb";
 
 const BASE = "";
@@ -113,8 +116,13 @@ export const lowAbsorbApi = {
   notifyCloseReport: (force = false) =>
     post<LowAbsorbApiNotificationResult>(`/low-absorb/reports/close/notify?force=${force}`),
 
-  getSentimentSnapshot: () => request<Record<string, unknown>>("/low-absorb/sentiment/snapshot"),
-  getChainSnapshot: () => request<Record<string, unknown>>("/low-absorb/chain/snapshot"),
+  getSentimentSnapshot: () => request<LowAbsorbSentimentSnapshot>("/low-absorb/sentiment/snapshot"),
+  getChainSnapshot: () => request<LowAbsorbChainSnapshot>("/low-absorb/chain/snapshot"),
+  patchCostChainModel: (version: string, components: LowAbsorbCostChainComponent[]) =>
+    patch<{ version: string; components: LowAbsorbCostChainComponent[] }>(
+      `/low-absorb/chain/cost-models/${encodeURIComponent(version).replace("%2F", "/")}`,
+      { components },
+    ),
   getBacktestSummary: () => request<Record<string, unknown>>("/low-absorb/backtest/summary"),
   runBacktest: () => post<Record<string, unknown>>("/low-absorb/backtest/run"),
 

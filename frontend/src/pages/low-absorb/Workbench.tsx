@@ -59,6 +59,13 @@ function mapSignal(signal: LowAbsorbApiSignal): LowAbsorbSignal {
     interceptReason: signal.intercept_reasons?.join("；") || "无",
     status: signal.status,
     riskLevel: riskFromStatus(signal.status),
+    chainExplanation: signal.chain_explanation,
+    branchStrength: String(signal.branch_strength ?? "-"),
+    costSignalWeight: String(signal.cost_signal_weight ?? "-"),
+    priorityScore: String(signal.priority_score ?? "-"),
+    downgradeReason: signal.downgrade_reason,
+    blockReason: signal.block_reason,
+    sectorRole: signal.sector_role,
   };
 }
 
@@ -78,6 +85,13 @@ function mapPlan(plan: LowAbsorbApiTradePlan): LowAbsorbTradePlan {
     status: plan.status,
     manualOrderText: plan.manual_order_text,
     riskLevel: riskFromStatus(plan.status),
+    chainExplanation: plan.chain_explanation,
+    branchStrength: String(plan.branch_strength ?? "-"),
+    costSignalWeight: String(plan.cost_signal_weight ?? "-"),
+    priorityScore: String(plan.priority_score ?? "-"),
+    downgradeReason: plan.downgrade_reason,
+    blockReason: plan.block_reason,
+    sectorRole: plan.sector_role,
     feishuPreview: {
       title: "14:45 低吸交易计划｜人工执行",
       status: sent ? "已推送" : "待推送",
@@ -87,6 +101,7 @@ function mapPlan(plan: LowAbsorbApiTradePlan): LowAbsorbTradePlan {
         `参考止损：${plan.stop_loss}`,
         `建议仓位：${pct(plan.planned_position_pct)}`,
         `初始 R 风险：${plan.initial_risk_cny} 元`,
+        plan.chain_explanation || "AI 产业链解释待生成",
         plan.rationale,
       ],
     },
@@ -118,18 +133,86 @@ function snapshotToWorkbench(snapshot: LowAbsorbApiSnapshot): LowAbsorbWorkbench
   const positions = snapshot.positions.map((position) =>
     mapPosition(position, snapshot.risk_matrix.find((risk) => risk.position_id === position.position_id)),
   );
+  const aGradeCount = signals.filter((signal) => signal.grade.startsWith("A")).length;
+  const rejectedCount = signals.filter((signal) => signal.interceptReason !== "无" || signal.status.includes("INVALID")).length;
+  const pendingFeishu = tradePlans.filter((plan) => plan.feishuStatus !== "已推送").length;
+  const pendingFills = tradePlans.filter((plan) => plan.status !== "MANUAL_FILLED").length;
+  const supervisionCount = positions.filter((item) => item.supervisionStatus.includes("10:00")).length;
+  const permission = snapshot.sentiment?.tradingPermission;
   return {
     dashboardCards: [
-      { id: "market", label: "市场状态", value: "API", detail: "后端策略闸门已接入", riskLevel: "normal" },
-      { id: "signals", label: "今日信号", value: String(signals.length), detail: "来自 /low-absorb/snapshot", riskLevel: signals.length ? "watch" : "normal" },
-      { id: "feishu", label: "待推送飞书", value: String(tradePlans.filter((plan) => plan.feishuStatus !== "已推送").length), detail: "计划可推送飞书推荐卡", riskLevel: "watch" },
-      { id: "fills", label: "待成交回填", value: String(tradePlans.filter((plan) => plan.status !== "MANUAL_FILLED").length), detail: "等待用户记录人工成交", riskLevel: "warning" },
-      { id: "risk", label: "当前持仓风险", value: String(positions.length), detail: "基于人工持仓 R-risk", riskLevel: positions.some((item) => item.riskLevel === "danger") ? "danger" : "watch" },
-      { id: "supervision", label: "明日 10:00 需监督", value: String(positions.filter((item) => item.supervisionStatus.includes("10:00")).length), detail: "开盘抗噪后检查", riskLevel: "warning" },
+      {
+        id: "permission",
+        label: "交易许可",
+        value: permission?.status ?? "允许观察",
+        detail: "双情绪时钟决定是否允许生成建议",
+        riskLevel: "normal",
+        currentStatus: permission?.status ?? "允许观察",
+        keyMetrics: ["成交额闸门", "炸板率闸门", "AI 资金温度"],
+        trend: "情绪较昨日改善",
+        nextAction: permission?.nextAction ?? "执行 14:45 扫描",
+      },
+      {
+        id: "signals",
+        label: "今日信号",
+        value: String(signals.length),
+        detail: "信号漏斗输出",
+        riskLevel: signals.length ? "watch" : "normal",
+        currentStatus: `${aGradeCount} 个 A 级`,
+        keyMetrics: [`拦截 ${rejectedCount}`, `计划 ${tradePlans.length}`],
+        trend: "成本链强分支优先",
+        nextAction: "生成交易计划",
+      },
+      {
+        id: "feishu",
+        label: "待推送飞书",
+        value: String(pendingFeishu),
+        detail: "推荐卡待人工确认",
+        riskLevel: "watch",
+        currentStatus: "等待人工确认",
+        keyMetrics: [`A 级 ${aGradeCount}`, "幂等推送"],
+        trend: "优先处理高分计划",
+        nextAction: "推送飞书",
+      },
+      {
+        id: "fills",
+        label: "待成交回填",
+        value: String(pendingFills),
+        detail: "等待记录人工成交结果",
+        riskLevel: "warning",
+        currentStatus: "需要对账",
+        keyMetrics: ["成交价", "数量", "滑点"],
+        trend: "回填后刷新 R 风险",
+        nextAction: "记录人工成交",
+      },
+      {
+        id: "risk",
+        label: "当前持仓风险",
+        value: String(positions.length),
+        detail: "基于人工持仓 R-risk",
+        riskLevel: positions.some((item) => item.riskLevel === "danger") ? "danger" : "watch",
+        currentStatus: positions.some((item) => item.riskLevel !== "normal") ? "存在预警" : "正常跟踪",
+        keyMetrics: ["初始风险", "当前风险", "R 倍数"],
+        trend: "靠近止损需监督",
+        nextAction: "生成风控提醒",
+      },
+      {
+        id: "supervision",
+        label: "明日 10:00 需监督",
+        value: String(supervisionCount),
+        detail: "09:30-10:00 抗噪后检查",
+        riskLevel: "warning",
+        currentStatus: "等待早盘确认",
+        keyMetrics: ["首根 30m", "行业 alpha", "止损距离"],
+        trend: "后续 bar 不参与首段监督",
+        nextAction: "10:00 监督",
+      },
     ],
     tasks: [
-      { id: "scan", time: "14:45", title: "执行尾盘低吸扫描", detail: "生成信号与人工交易计划后再推送飞书。", riskLevel: "watch" },
-      { id: "fills", time: "手动成交后", title: "回填人工成交", detail: "仅记录外部券商 App 已完成的人工成交。", riskLevel: "warning" },
+      { id: "feishu-a", time: "14:48", title: "A 级计划待推送飞书", detail: `当前 ${pendingFeishu} 个计划等待飞书推荐卡。`, riskLevel: "watch" },
+      { id: "fills", time: "成交后", title: "成交待回填", detail: `当前 ${pendingFills} 个计划等待人工成交回填。`, riskLevel: "warning" },
+      { id: "supervision", time: "次日 10:00", title: "10:00 监督", detail: `当前 ${supervisionCount} 个持仓需要早盘抗噪后监督。`, riskLevel: "warning" },
+      { id: "invalidated", time: "收盘后", title: "失效信号复核", detail: `当前 ${rejectedCount} 个信号需要复核拦截原因。`, riskLevel: "watch" },
     ],
     signals,
     tradePlans,
@@ -149,11 +232,11 @@ export function Workbench() {
       const snapshot = await lowAbsorbApi.getSnapshot();
       setData(snapshotToWorkbench(snapshot));
       setDataMode("api");
-      setMessage("API 数据已同步");
+      setMessage("接口数据已同步");
     } catch (error) {
       setData(LOW_ABSORB_MOCK);
       setDataMode("demo");
-      setMessage(error instanceof Error ? error.message : "API 暂不可用");
+      setMessage(error instanceof Error ? error.message : "接口暂不可用");
     }
   }, []);
 
@@ -227,7 +310,7 @@ export function Workbench() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
         <div>
           <p className="text-sm font-medium text-foreground">
-            {dataMode === "demo" ? "演示数据模式" : dataMode === "loading" ? "正在同步 API" : "API 数据模式"}
+            {dataMode === "demo" ? "演示数据模式" : dataMode === "loading" ? "正在同步接口" : "接口数据模式"}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">{message || "人工执行流程由后端策略与本地记录驱动。"}</p>
         </div>
@@ -265,7 +348,7 @@ export function Workbench() {
               {activeTab}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              信号、计划、人工成交与持仓风险均来自 Low Absorb API；网络不可用时仅回落到演示数据。
+              信号、计划、人工成交与持仓风险均来自主板低吸接口；网络不可用时仅回落到演示数据。
             </p>
           </div>
 
@@ -310,6 +393,26 @@ export function Workbench() {
           )}
           {selectedPlan && (
             <>
+              <div className="rounded-md border bg-background p-3 text-xs">
+                <p className="font-medium text-foreground">AI 产业链解释</p>
+                <p className="mt-2 leading-5 text-muted-foreground">
+                  {selectedPlan.chainExplanation || "该计划暂未生成 AI 产业链解释。"}
+                </p>
+                <dl className="mt-3 grid grid-cols-3 gap-2">
+                  <div>
+                    <dt className="text-muted-foreground">RS</dt>
+                    <dd className="font-medium text-foreground">{selectedPlan.branchStrength}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">成本权重</dt>
+                    <dd className="font-medium text-foreground">{selectedPlan.costSignalWeight}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">优先级</dt>
+                    <dd className="font-medium text-foreground">{selectedPlan.priorityScore}</dd>
+                  </div>
+                </dl>
+              </div>
               <FeishuPreviewCard preview={selectedPlan.feishuPreview} />
               <ManualFillDrawer plan={selectedPlan} onSubmit={(values) => void handleManualFill(selectedPlan, values)} />
             </>
