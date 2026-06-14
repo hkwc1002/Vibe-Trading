@@ -155,6 +155,71 @@ def test_scan_tail_endpoint_runs_scanner_and_persists_results(tmp_path) -> None:
     assert "plan-601138-20260612" in reloaded.trade_plans
 
 
+def test_scan_tail_returns_blocked_signals_when_budget_exceeded() -> None:
+    """API returns blocked_signals when portfolio risk budget is exceeded."""
+    symbols = ["600089", "601138", "603019", "605333", "603912", "603986"]
+    daily_bars: dict[str, list[DailyBar]] = {}
+    intraday_bars_dict: dict[str, list[IntradayBar]] = {}
+    for sym in symbols:
+        daily_bars[sym] = _daily_bars(sym)
+        intraday_bars_dict[sym] = [
+            IntradayBar(
+                symbol=sym, trade_date=TRADE_DATE, at=SCAN_AT,
+                open=Decimal("19.95"), high=Decimal("20.10"),
+                low=Decimal("19.72"), close=Decimal("20.02"),
+                volume=Decimal("120000"),
+            )
+        ]
+
+    provider = FixtureMarketDataProvider(
+        symbols=symbols,
+        market_breadth=MarketBreadth(
+            trade_date=TRADE_DATE, captured_at=SCAN_AT,
+            total_market_turnover_cny=Decimal("900000000000"),
+            limit_break_rate=Decimal("0.20"),
+        ),
+        daily_bars=daily_bars,
+        intraday_bars=intraday_bars_dict,
+        chain_strength=[
+            ChainBranchStrength(
+                branch_name="AI 服务器", rank=1, total_branches=3,
+                slope=Decimal("0.08"), relative_strength=Decimal("1.20"),
+            ),
+        ],
+    )
+
+    storage = InMemoryLowAbsorbStorage()
+    storage.update_config({
+        "min_market_turnover_cny": "800000000000",
+        "max_limit_break_rate": "0.50",
+        "ma20_deviation_min": "-0.05",
+        "ma20_deviation_max": "0.01",
+        "max_volume_ratio_5d": "0.85",
+        "min_lower_shadow_atr": "0.5",
+        "max_data_staleness_seconds": 60,
+        "max_single_position_weight": "0.12",
+        "max_single_trade_risk_pct": "0.0035",
+    })
+    set_workbench_storage(storage, data_provider=provider)
+    client = _client()
+
+    response = client.post(
+        "/low-absorb/scan-tail",
+        json={"trade_date": "2026-06-12", "at": SCAN_AT.isoformat(), "symbols": symbols},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["signals"]) == 5
+    assert len(body["blocked_signals"]) == 1
+    blocked = body["blocked_signals"][0]
+    assert blocked["block_reason"] != ""
+    assert "风险预算" in blocked["block_reason"]
+    blocked_ids = {s["signal_id"] for s in body["blocked_signals"]}
+    plan_signal_ids = {p["signal_id"] for p in body["trade_plans"]}
+    assert blocked_ids.isdisjoint(plan_signal_ids)
+
+
 def test_reports_api_uses_persistent_storage(tmp_path) -> None:
     storage = JsonLowAbsorbStorage(tmp_path / "low_absorb.json")
     set_workbench_storage(storage, data_provider=_provider())

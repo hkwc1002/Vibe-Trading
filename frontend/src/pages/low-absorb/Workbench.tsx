@@ -110,6 +110,11 @@ function mapPlan(plan: LowAbsorbApiTradePlan): LowAbsorbTradePlan {
 
 function mapPosition(position: LowAbsorbApiPosition, risk?: LowAbsorbApiRisk): LowAbsorbPosition {
   const riskLevel = risk?.risk_level ?? riskFromStatus(position.status);
+  const lastPrice = asNumber(position.current_price);
+  const stopLossPrice = asNumber(position.current_stop_price ?? position.stop_loss);
+  const stopLossDistance = lastPrice > 0 && stopLossPrice > 0
+    ? `${((lastPrice - stopLossPrice) / lastPrice * 100).toFixed(2)}%`
+    : "-";
   return {
     id: position.position_id,
     stockCode: position.stock_code,
@@ -117,6 +122,7 @@ function mapPosition(position: LowAbsorbApiPosition, risk?: LowAbsorbApiRisk): L
     cost: String(position.avg_cost ?? position.cost_price ?? "-"),
     lastPrice: String(position.current_price ?? "-"),
     stopLoss: String(position.current_stop_price ?? position.stop_loss ?? "-"),
+    stopLossDistance,
     positionSize: `${position.quantity} 股 / ${pct(position.position_weight ?? position.position_pct)}`,
     initialRisk: risk ? `${risk.initial_risk_amount} 元` : "-",
     currentRisk: risk ? `${risk.current_risk_amount} 元` : "-",
@@ -133,6 +139,7 @@ function snapshotToWorkbench(snapshot: LowAbsorbApiSnapshot): LowAbsorbWorkbench
   const positions = snapshot.positions.map((position) =>
     mapPosition(position, snapshot.risk_matrix.find((risk) => risk.position_id === position.position_id)),
   );
+  const blockedSignals = (snapshot.blocked_signals ?? []).map(mapSignal);
   const aGradeCount = signals.filter((signal) => signal.grade.startsWith("A")).length;
   const rejectedCount = signals.filter((signal) => signal.interceptReason !== "无" || signal.status.includes("INVALID")).length;
   const pendingFeishu = tradePlans.filter((plan) => plan.feishuStatus !== "已推送").length;
@@ -217,6 +224,7 @@ function snapshotToWorkbench(snapshot: LowAbsorbApiSnapshot): LowAbsorbWorkbench
     signals,
     tradePlans,
     positions,
+    blockedSignals,
   };
 }
 
@@ -255,15 +263,23 @@ export function Workbench() {
   }, [data.tradePlans, selection]);
 
   const selectedSignal = useMemo(() => {
-    if (selection?.kind === "signal") return data.signals.find((signal) => signal.id === selection.id);
+    if (selection?.kind === "signal") {
+      return data.signals.find((signal) => signal.id === selection.id)
+        ?? data.blockedSignals.find((signal) => signal.id === selection.id);
+    }
     if (selectedPlan) return data.signals.find((signal) => signal.id === selectedPlan.signalId);
     return data.signals[0];
-  }, [data.signals, selectedPlan, selection]);
+  }, [data.signals, data.blockedSignals, selectedPlan, selection]);
 
   const selectedPosition = useMemo(() => {
     if (selection?.kind === "position") return data.positions.find((position) => position.id === selection.id);
     return data.positions[0];
   }, [data.positions, selection]);
+
+  const isBlockedSignal = useMemo(
+    () => selection?.kind === "signal" && data.blockedSignals.some((s) => s.id === selection.id),
+    [data.blockedSignals, selection],
+  );
 
   async function handleScanTail() {
     const snapshot = await lowAbsorbApi.scanTail();
@@ -352,7 +368,34 @@ export function Workbench() {
             </p>
           </div>
 
-          {activeTab === "总览" && <WorkbenchOverview data={data} />}
+          {activeTab === "总览" && (
+            <>
+              <WorkbenchOverview data={data} />
+              {data.blockedSignals.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
+                  <h3 className="text-sm font-semibold text-red-800 dark:text-red-300">
+                    风险预算拦截信号（{data.blockedSignals.length} 个）
+                  </h3>
+                  <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+                    以下信号因组合风险预算超限被拦截，不生成交易计划。点击可查看详情和拦截原因。
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {data.blockedSignals.map((signal) => (
+                      <li key={signal.id}>
+                        <button
+                          type="button"
+                          onClick={() => { setActiveTab("今日信号"); setSelection({ kind: "signal", id: signal.id }); }}
+                          className="w-full rounded p-1 text-left text-xs text-red-700 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900"
+                        >
+                          {signal.stockCode} {signal.stockName} · {signal.branch} — {signal.blockReason || "组合风险预算超限"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
           {activeTab === "今日信号" && (
             <SignalPanel
               signals={data.signals}
@@ -389,6 +432,16 @@ export function Workbench() {
               <p className="font-medium text-foreground">信号详情</p>
               <p className="mt-2 text-muted-foreground">{selectedSignal.stockCode} {selectedSignal.stockName} · {selectedSignal.branch}</p>
               <p className="mt-2 leading-5 text-muted-foreground">{selectedSignal.reason}</p>
+              {selectedSignal.downgradeReason && (
+                <p className="mt-2 rounded bg-yellow-50 p-2 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
+                  降级原因：{selectedSignal.downgradeReason}
+                </p>
+              )}
+              {selectedSignal.blockReason && (
+                <p className="mt-2 rounded bg-red-50 p-2 text-red-700 dark:bg-red-950 dark:text-red-300">
+                  拦截原因：{selectedSignal.blockReason}
+                </p>
+              )}
             </div>
           )}
           {selectedPlan && (
@@ -412,6 +465,16 @@ export function Workbench() {
                     <dd className="font-medium text-foreground">{selectedPlan.priorityScore}</dd>
                   </div>
                 </dl>
+                {selectedPlan.downgradeReason && (
+                  <p className="mt-2 rounded bg-yellow-50 p-2 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
+                    降级原因：{selectedPlan.downgradeReason}
+                  </p>
+                )}
+                {selectedPlan.blockReason && (
+                  <p className="mt-2 rounded bg-red-50 p-2 text-red-700 dark:bg-red-950 dark:text-red-300">
+                    拦截原因：{selectedPlan.blockReason}
+                  </p>
+                )}
               </div>
               <FeishuPreviewCard preview={selectedPlan.feishuPreview} />
               <ManualFillDrawer plan={selectedPlan} onSubmit={(values) => void handleManualFill(selectedPlan, values)} />
@@ -421,8 +484,30 @@ export function Workbench() {
             <div className="rounded-md border bg-background p-3 text-xs">
               <p className="font-medium text-foreground">风险解释</p>
               <p className="mt-2 text-muted-foreground">{selectedPosition.stockCode} {selectedPosition.stockName}</p>
+              <dl className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <dt className="text-muted-foreground">初始风险</dt>
+                  <dd className="font-medium text-foreground">{selectedPosition.initialRisk}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">当前风险</dt>
+                  <dd className="font-medium text-foreground">{selectedPosition.currentRisk}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">R 倍数</dt>
+                  <dd className="font-medium text-foreground">{selectedPosition.rMultiple}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">止损价</dt>
+                  <dd className="font-medium text-foreground">{selectedPosition.stopLoss}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">止损距离</dt>
+                  <dd className="font-medium text-foreground">{selectedPosition.stopLossDistance}</dd>
+                </div>
+              </dl>
               <p className="mt-2 leading-5 text-muted-foreground">
-                当前风险 {selectedPosition.currentRisk}，R 倍数 {selectedPosition.rMultiple}，监督状态 {selectedPosition.supervisionStatus}。
+                监督状态：{selectedPosition.supervisionStatus}
               </p>
             </div>
           )}
@@ -433,13 +518,47 @@ export function Workbench() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-foreground">统一动作</p>
-            <p className="text-xs text-muted-foreground">所有动作仅生成建议、通知或记录人工处理结果。</p>
+            <p className="text-xs text-muted-foreground">
+              {isBlockedSignal
+                ? "拦截信号上下文：仅标记失效、生成风控提醒或调整备注。"
+                : selection?.kind === "signal"
+                  ? "信号上下文：仅生成建议、通知或标记失效。"
+                  : selection?.kind === "position"
+                    ? "持仓上下文：仅记录人工处理结果或调整备注。"
+                    : "计划上下文：仅复制信息、推送通知、记录成交或作废。"}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => selectedPlan && navigator.clipboard?.writeText(selectedPlan.manualOrderText)} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">复制人工下单信息</button>
-            <button type="button" onClick={() => selectedPlan && void handleSendPlanToFeishu(selectedPlan)} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">推送飞书</button>
-            <button type="button" onClick={() => selectedPlan && setSelection({ kind: "plan", id: selectedPlan.id })} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">记录人工成交</button>
-            <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">生成风控提醒</button>
+            {selection?.kind === "signal" && isBlockedSignal && (
+              <>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">标记失效</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">生成风控提醒</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">调整备注</button>
+              </>
+            )}
+            {selection?.kind === "signal" && !isBlockedSignal && (
+              <>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">生成交易计划</button>
+                <button type="button" onClick={() => selectedSignal && void handleSignalFeishu(selectedSignal)} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">推送飞书</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">标记失效</button>
+              </>
+            )}
+            {selection?.kind === "position" && (
+              <>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">记录卖出</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">调整备注</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">生成风控提醒</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">归档持仓</button>
+              </>
+            )}
+            {(!selection || selection.kind === "plan") && (
+              <>
+                <button type="button" onClick={() => selectedPlan && navigator.clipboard?.writeText(selectedPlan.manualOrderText)} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">复制人工下单信息</button>
+                <button type="button" onClick={() => selectedPlan && void handleSendPlanToFeishu(selectedPlan)} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">推送飞书</button>
+                <button type="button" onClick={() => selectedPlan && setSelection({ kind: "plan", id: selectedPlan.id })} className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">记录人工成交</button>
+                <button type="button" className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted">作废计划</button>
+              </>
+            )}
           </div>
         </div>
       </div>
