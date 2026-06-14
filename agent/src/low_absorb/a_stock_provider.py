@@ -46,6 +46,72 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
     def _get_json(self, url: str, params: dict[str, object] | None = None) -> dict[str, object]:
         return self.http_client.get_json(url, params)
 
+    def _fetch_limit_break_rate(self) -> tuple[Decimal | None, int | None, int | None]:
+        """Fetch limit-break, advance and decline counts from Eastmoney A-share list.
+
+        Returns ``(limit_break_rate, advance_count, decline_count)`` where
+        all three are ``None`` (fail-closed) when:
+        - The endpoint is unavailable or returns an error.
+        - ``total <= 0`` or ``rows`` is not a list.
+        - Fewer rows are received than ``total`` after exhausting pages
+          (i.e. the API truncated the response and we cannot confirm
+          full coverage).
+        """
+        try:
+            page_size = 5000
+            all_rows: list[dict[str, object]] = []
+            total = 0
+
+            for page in range(1, 11):  # safety cap: max 10 pages
+                data = self._get_json(
+                    "https://push2.eastmoney.com/api/qt/clist/get",
+                    {
+                        "pn": str(page),
+                        "pz": str(page_size),
+                        "po": "1",
+                        "np": "1",
+                        "fltt": "2",
+                        "invt": "2",
+                        "fid": "f3",
+                        "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+                        "fields": "f3",
+                    },
+                )
+                data_obj = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
+                rows = data_obj.get("diff", [])
+                total = data_obj.get("total", 0) if isinstance(data_obj.get("total"), (int, float)) else 0
+
+                if total <= 0 or not isinstance(rows, list):
+                    return None, None, None
+
+                all_rows.extend(row for row in rows if isinstance(row, dict))
+
+                if len(all_rows) >= total:
+                    break
+            else:
+                # Exhausted pages without covering total → truncated response
+                return None, None, None
+
+            limit_up = 0
+            limit_down = 0
+            advance = 0
+            decline = 0
+            for row in all_rows:
+                pct = _decimal(row.get("f3"))
+                if pct >= Decimal("9.8"):
+                    limit_up += 1
+                elif pct <= Decimal("-9.8"):
+                    limit_down += 1
+                if pct > 0:
+                    advance += 1
+                elif pct < 0:
+                    decline += 1
+
+            rate = Decimal(str(limit_up + limit_down)) / Decimal(str(total))
+            return rate, advance, decline
+        except Exception:
+            return None, None, None
+
     def get_market_breadth(self, trade_date: date, at: datetime) -> MarketBreadth | None:
         try:
             data = self._get_json(
@@ -62,13 +128,23 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
             if turnover <= 0:
                 self._mark_status("market_breadth", ok=False, data_source="eastmoney_index", message="empty turnover")
                 return None
+            limit_break_result = self._fetch_limit_break_rate()
+            limit_break_rate, advance_count, decline_count = limit_break_result
+            if limit_break_rate is None:
+                self._mark_status(
+                    "market_breadth", ok=False, data_source="eastmoney_index",
+                    message="limit_break_rate unavailable (clist failed or empty)",
+                )
+                return None
             self._mark_status("market_breadth", ok=True, data_source="eastmoney_index", staleness_seconds=0, captured_at=at, market_date=trade_date)
             self._latest_captured["market_breadth"] = at
             return MarketBreadth(
                 trade_date=trade_date,
                 captured_at=at,
                 total_market_turnover_cny=turnover,
-                limit_break_rate=Decimal("0.20"),
+                limit_break_rate=limit_break_rate,
+                advance_count=advance_count,
+                decline_count=decline_count,
             )
         except Exception as exc:
             self._mark_status("market_breadth", ok=False, data_source="eastmoney_index", message=str(exc))

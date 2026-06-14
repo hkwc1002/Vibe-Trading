@@ -58,6 +58,8 @@ class MarketBreadth(MarketDataRow):
     captured_at: datetime
     total_market_turnover_cny: Decimal = Field(..., ge=0)
     limit_break_rate: Decimal = Field(..., ge=0, le=1)
+    advance_count: int | None = None
+    decline_count: int | None = None
 
 
 class DailyBar(MarketDataRow):

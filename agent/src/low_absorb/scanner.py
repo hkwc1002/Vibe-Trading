@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -28,6 +28,7 @@ class ScanTailResult:
 
     signals: list[LowAbsorbSignal]
     trade_plans: list[ManualTradePlan]
+    blocked_signals: list[LowAbsorbSignal] = field(default_factory=list)
 
 
 def is_mainboard_symbol(symbol: str) -> bool:
@@ -49,6 +50,11 @@ def _scan_at(trade_date: date, config: LowAbsorbConfig) -> datetime:
 
 def _mean(values: list[Decimal]) -> Decimal:
     return sum(values, Decimal("0")) / Decimal(len(values))
+
+
+_PORTFOLIO_POSITION_LIMIT = Decimal("0.60")
+_FRESHNESS_FULL = Decimal("1")
+_FRESHNESS_MIN = Decimal("0.5")
 
 
 class LowAbsorbScanner:
@@ -94,76 +100,116 @@ class LowAbsorbScanner:
 
         bars_by_symbol = self._data_provider.get_daily_bars(mainboard_symbols, trade_date, 20)
         branch_strength = self._data_provider.get_chain_branch_strength(trade_date, lookback=20)
-        candidates: list[tuple[LowAbsorbSignal, DailyBar]] = []
-        for symbol in mainboard_symbols:
-            bars = bars_by_symbol.get(symbol) or []
-            if len(bars) < 20:
-                continue
-            latest = bars[-1]
-            if self._bar_is_stale(latest, scan_at):
-                continue
-            if not chain_branch_allows_stock(latest.industry, branch_strength):
-                continue
-            metrics = self._technical_metrics(bars)
-            if metrics is None:
-                continue
-            ma20_deviation, volume_ratio, lower_shadow_atr = metrics
-            if not (
-                self._config.ma20_deviation_min
-                <= ma20_deviation
-                <= self._config.ma20_deviation_max
-            ):
-                continue
-            if volume_ratio > self._config.max_volume_ratio_5d:
-                continue
-            if lower_shadow_atr < self._config.min_lower_shadow_atr:
-                continue
 
-            normalized_sector = normalize_chain_sector(latest.industry)
-            branch_strength_value = branch_strength_for_sector(normalized_sector, branch_strength)
-            cost_weight = cost_signal_weight_for_sector(normalized_sector, self._config)
-            priority_score = chain_priority_score(
-                sector=normalized_sector,
-                branches=branch_strength,
-                config=self._config,
-            )
-            chain_explanation = chain_explanation_for_sector(
-                sector=normalized_sector,
-                branches=branch_strength,
-                config=self._config,
-            )
-            signal = LowAbsorbSignal(
-                signal_id=f"sig-{latest.symbol}-{trade_date:%Y%m%d}",
-                trade_date=trade_date,
-                stock_code=latest.symbol,
-                stock_name=latest.stock_name,
-                branch_name=normalized_sector,
-                grade="A",
-                ma20_deviation_pct=ma20_deviation,
-                volume_ratio=volume_ratio,
-                lower_shadow_atr=lower_shadow_atr,
-                reason=(
-                    f"MA20 偏离 {ma20_deviation:.2%}，5日量比 {volume_ratio:.2f}，"
-                    f"下影线 {lower_shadow_atr:.2f} ATR，产业链分支未触发弱分支拦截；"
-                    f"AI Chain 优先级 {priority_score:.2f}。"
-                ),
-                status=SignalStatus.CANDIDATE,
-                chain_explanation=chain_explanation,
-                branch_strength=branch_strength_value,
-                cost_signal_weight=cost_weight,
-                priority_score=priority_score,
-                sector_role="mainboard_mapping",
-            )
-            candidates.append((signal, latest))
-        candidates.sort(key=lambda item: item[0].priority_score, reverse=True)
-        signals = [signal for signal, _ in candidates]
-        plans = [self._build_plan(signal, latest, trade_date) for signal, latest in candidates]
-        return ScanTailResult(signals=signals, trade_plans=plans)
+        # Phase 1: evaluate all candidates (no budget check yet)
+        evaluated: list[tuple[LowAbsorbSignal, DailyBar]] = []
+        for symbol in mainboard_symbols:
+            result = self._evaluate_candidate(symbol, bars_by_symbol, branch_strength, trade_date, scan_at)
+            if result is not None:
+                evaluated.append(result)
+
+        # Phase 2: sort by priority_score descending
+        evaluated.sort(key=lambda item: item[0].priority_score, reverse=True)
+
+        # Phase 3: apply portfolio risk budget to sorted candidates
+        qualified: list[tuple[LowAbsorbSignal, DailyBar]] = []
+        blocked: list[LowAbsorbSignal] = []
+        cumulative_weight = Decimal("0")
+        for signal, latest in evaluated:
+            if cumulative_weight + self._config.max_single_position_weight > _PORTFOLIO_POSITION_LIMIT:
+                blocked_signal = signal.model_copy(update={
+                    "block_reason": (
+                        f"组合风险预算已满：已分配 {cumulative_weight:.0%}，"
+                        f"超出 {_PORTFOLIO_POSITION_LIMIT:.0%} 上限"
+                    )
+                })
+                blocked.append(blocked_signal)
+                continue
+            cumulative_weight += self._config.max_single_position_weight
+            qualified.append((signal, latest))
+
+        signals = [signal for signal, _ in qualified]
+        plans = [self._build_plan(signal, latest, trade_date) for signal, latest in qualified]
+        return ScanTailResult(signals=signals, trade_plans=plans, blocked_signals=blocked)
+
+    def _evaluate_candidate(
+        self,
+        symbol: str,
+        bars_by_symbol: dict[str, list[DailyBar]],
+        branch_strength: list[ChainBranchStrength],
+        trade_date: date,
+        scan_at: datetime,
+    ) -> tuple[LowAbsorbSignal, DailyBar] | None:
+        """Evaluate one symbol through technical gates and scoring. Returns (signal, bar) or None."""
+        bars = bars_by_symbol.get(symbol) or []
+        if len(bars) < 20:
+            return None
+        latest = bars[-1]
+        if self._bar_is_stale(latest, scan_at):
+            return None
+        if not chain_branch_allows_stock(latest.industry, branch_strength):
+            return None
+        metrics = self._technical_metrics(bars)
+        if metrics is None:
+            return None
+        ma20_deviation, volume_ratio, lower_shadow_atr = metrics
+        if not (self._config.ma20_deviation_min <= ma20_deviation <= self._config.ma20_deviation_max):
+            return None
+        if volume_ratio > self._config.max_volume_ratio_5d:
+            return None
+        if lower_shadow_atr < self._config.min_lower_shadow_atr:
+            return None
+
+        normalized = normalize_chain_sector(latest.industry)
+        base_priority = chain_priority_score(sector=normalized, branches=branch_strength, config=self._config)
+        freshness = self._freshness_decay(latest, scan_at)
+        priority_score = base_priority * freshness
+
+        downgrade_reason = ""
+        if freshness < _FRESHNESS_FULL:
+            decay_pct = (1 - freshness) * 100
+            downgrade_reason = f"数据新鲜度衰减 {decay_pct:.0f}%，优先级已下调"
+
+        signal = LowAbsorbSignal(
+            signal_id=f"sig-{latest.symbol}-{trade_date:%Y%m%d}",
+            trade_date=trade_date,
+            stock_code=latest.symbol,
+            stock_name=latest.stock_name,
+            branch_name=normalized,
+            grade="A",
+            ma20_deviation_pct=ma20_deviation,
+            volume_ratio=volume_ratio,
+            lower_shadow_atr=lower_shadow_atr,
+            reason=(
+                f"MA20 偏离 {ma20_deviation:.2%}，5日量比 {volume_ratio:.2f}，"
+                f"下影线 {lower_shadow_atr:.2f} ATR，产业链分支未触发弱分支拦截；"
+                f"AI Chain 优先级 {priority_score:.2f}。"
+            ),
+            status=SignalStatus.CANDIDATE,
+            chain_explanation=chain_explanation_for_sector(sector=normalized, branches=branch_strength, config=self._config),
+            branch_strength=branch_strength_for_sector(normalized, branch_strength),
+            cost_signal_weight=cost_signal_weight_for_sector(normalized, self._config),
+            priority_score=priority_score,
+            downgrade_reason=downgrade_reason,
+            sector_role="mainboard_mapping",
+        )
+        return signal, latest
 
     def _bar_is_stale(self, bar: DailyBar, at: datetime) -> bool:
         if bar.captured_at is None:
             return True
         return abs((at - bar.captured_at).total_seconds()) > self._config.max_data_staleness_seconds
+
+    def _freshness_decay(self, bar: DailyBar, at: datetime) -> Decimal:
+        """Return freshness factor in [0.5, 1.0]. 1.0 = just captured, 0.5 = near stale threshold."""
+        if bar.captured_at is None:
+            return _FRESHNESS_MIN
+        age_seconds = Decimal(str(abs((at - bar.captured_at).total_seconds())))
+        threshold = Decimal(str(self._config.max_data_staleness_seconds))
+        if threshold <= 0:
+            return _FRESHNESS_FULL
+        age = min(age_seconds, threshold)
+        return _FRESHNESS_FULL - (age / threshold * (_FRESHNESS_FULL - _FRESHNESS_MIN))
 
     def _technical_metrics(self, bars: list[DailyBar]) -> tuple[Decimal, Decimal, Decimal] | None:
         latest = bars[-1]

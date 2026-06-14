@@ -79,6 +79,7 @@ export type LowAbsorbPosition = {
   cost: string;
   lastPrice: string;
   stopLoss: string;
+  stopLossDistance: string;
   positionSize: string;
   initialRisk: string;
   currentRisk: string;
@@ -94,6 +95,7 @@ export type LowAbsorbWorkbenchMock = {
   signals: LowAbsorbSignal[];
   tradePlans: LowAbsorbTradePlan[];
   positions: LowAbsorbPosition[];
+  blockedSignals: LowAbsorbSignal[];
 };
 
 export type LowAbsorbSentimentMetric = {
@@ -386,7 +388,15 @@ export type LowAbsorbApiRisk = {
   supervision_status?: string;
 };
 
-export type LowAbsorbApiCloseReport = Record<string, unknown>;
+export type LowAbsorbApiCloseReport = {
+  report_id: string;
+  trade_date: string;
+  summary: string;
+  signals: LowAbsorbApiSignal[];
+  trade_plans: LowAbsorbApiTradePlan[];
+  positions: LowAbsorbApiPosition[];
+  review_items: string[];
+};
 
 export type LowAbsorbApiSnapshot = {
   signals: LowAbsorbApiSignal[];
@@ -395,6 +405,7 @@ export type LowAbsorbApiSnapshot = {
   risk_matrix: LowAbsorbApiRisk[];
   notifications: LowAbsorbApiNotificationResult[];
   reports: LowAbsorbApiCloseReport[];
+  blocked_signals?: LowAbsorbApiSignal[];
   sentiment?: Partial<LowAbsorbSentimentSnapshot>;
   chain?: Partial<LowAbsorbChainSnapshot>;
 };

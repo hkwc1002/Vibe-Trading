@@ -1,0 +1,147 @@
+task_id: "001-low-absorb-next-optimization"
+title: "Low Absorb 后续优化 Batch D — 情绪、回测、报告、存储与端到端测试"
+implemented_by: "Claude Code CLI"
+created_at: "2026-06-14"
+
+contract:
+  file: "contract.yaml"
+  risk_level: "A"
+  read: true
+
+understanding:
+  goal: "完成 Low Absorb 模块剩余任务：市场情绪交易许可系统闭环（T8）、策略回测页面与快照契约增强（T9）、收盘复盘报告生成/归档/页面展示（T10）、持久化仓储扩展测试（T11）、端到端人工执行业务流测试（T12）和交付门禁（T13）。"
+
+  in_scope:
+    - "T8：补齐 sentiment API 的 A 股 breadth 数据传入，增强闸门测试和前端颜色指示器"
+    - "T9：backtest.py 从 skeleton 重写为返回完整回测快照数据，前端 Backtest.tsx 接入 API"
+    - "T10：report.py 增强计算逻辑，api/reports.py 支持 trade_date 过滤，Reports.tsx 从 PlaceholderGrid 重写为可用页面"
+    - "T11：为已有 storage.py（InMemory + Json 双实现）补充 8-10 个 roundtrip 测试"
+    - "T12：新建 test_low_absorb_workflow.py 覆盖 signal→plan→feishu→fill→position→report 主流程"
+    - "T13：按模板生成 delivery.yaml"
+
+  out_of_scope:
+    - "不修改 scanner.py、Workbench.tsx 等 Batch C 完成文件"
+    - "不新增 npm/pip 依赖"
+    - "不引入真实回测引擎"
+    - "不修改 package.json、pyproject.toml、tsconfig*.json、.github/**"
+    - "不接入券商交易 API、不实现自动交易、不出现禁用按钮文案"
+
+planned_changes:
+  files_to_modify:
+    - path: "agent/src/low_absorb/api/sentiment.py"
+      reason: "T8：新增 _get_a_stock_provider()，将 A 股 breadth 数据传入 build_sentiment_permission_snapshot"
+    - path: "agent/src/low_absorb/sentiment.py"
+      reason: "T8：涨跌家数宽度面板支持真实数据"
+    - path: "agent/tests/test_low_absorb_sentiment.py"
+      reason: "T8：增强闸门字段完整性和拦截逻辑测试"
+    - path: "frontend/src/pages/low-absorb/Sentiment.tsx"
+      reason: "T8：交易许可结论添加颜色指示器（绿/黄/红）"
+    - path: "agent/src/low_absorb/api/backtest.py"
+      reason: "T9：重写 build_backtest_snapshot()，返回完整回测快照数据（metrics/parameters/historicalSignals/sensitivity/branchAttribution/suggestions）"
+    - path: "agent/tests/test_low_absorb_backtest.py"
+      reason: "T9：新建 6-8 个测试覆盖回测 API 契约"
+    - path: "frontend/src/pages/low-absorb/Backtest.tsx"
+      reason: "T9：添加 useEffect 调用 getBacktestSummary() API，失败 fallback 到 mock"
+    - path: "frontend/src/components/low-absorb/backtest/BacktestOverview.tsx"
+      reason: "T9：从 10 行 stub 增强为展示关键指标摘要"
+    - path: "frontend/src/pages/low-absorb/__tests__/Stage9Pages.test.tsx"
+      reason: "T8+T9：增强断言（颜色指示器、API mock）"
+    - path: "agent/src/low_absorb/report.py"
+      reason: "T10：build_close_report() 计算待填计划数、失效候选数、需监督持仓数"
+    - path: "agent/src/low_absorb/api/reports.py"
+      reason: "T10：GET /reports 支持 optional trade_date 过滤"
+    - path: "frontend/src/types/lowAbsorb.ts"
+      reason: "T10：LowAbsorbApiCloseReport 从 Record<string, unknown> 改为完整类型"
+    - path: "frontend/src/pages/low-absorb/Reports.tsx"
+      reason: "T10：从 20 行 PlaceholderGrid stub 重写为报告生成/展示/归档页面"
+    - path: "frontend/src/pages/low-absorb/__tests__/LowAbsorbPages.test.tsx"
+      reason: "T10：Reports 测试从 PlaceholderGrid 改为 API mock 数据断言"
+    - path: "agent/tests/test_low_absorb_storage.py"
+      reason: "T11：新建 8-10 个 roundtrip 测试（InMemory + JsonStorage 双实现）"
+    - path: "agent/tests/test_low_absorb_reports.py"
+      reason: "T10：新建 6-8 个报告生成/保存/通知测试"
+    - path: "agent/tests/test_low_absorb_workflow.py"
+      reason: "T12：新建 5-7 个端到端主流程测试"
+    - path: "agent/tests/test_low_absorb_main_api_integration.py"
+      reason: "T12：增强路由可访问性测试"
+    - path: "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+      reason: "T13：交付包覆盖"
+
+  files_not_to_modify:
+    - path: "agent/src/low_absorb/scanner.py"
+      reason: "Batch C 完成任务，本批次不修改"
+    - path: "agent/src/low_absorb/trade_plan.py"
+      reason: "Batch C 完成任务，本批次不修改"
+    - path: "agent/src/low_absorb/api/workbench.py"
+      reason: "Batch C 完成任务，本批次不修改"
+    - path: "frontend/src/pages/low-absorb/Workbench.tsx"
+      reason: "Batch C 完成任务，本批次不修改"
+    - path: "package.json"
+      reason: "contract.yaml deny，不新增依赖"
+    - path: "pyproject.toml"
+      reason: "contract.yaml deny，不新增依赖"
+    - path: "tsconfig*.json"
+      reason: "contract.yaml deny，不改类型配置"
+    - path: "specs/constitution.md"
+      reason: "contract.yaml deny，项目宪法"
+    - path: "AGENT.md"
+      reason: "contract.yaml deny，旧版规则文件"
+    - path: ".github/**"
+      reason: "contract.yaml deny，不修改 CI/PR 流程"
+    - path: "specs/active/001-low-absorb-next-optimization/review.yaml"
+      reason: "Codex 审查文件，不由 Claude Code 修改"
+
+implementation_steps:
+  - "Step 1: T11 — 创建 test_low_absorb_storage.py（8-10 个 roundtrip 测试）"
+  - "Step 2: T8 — 修改 api/sentiment.py 传入 A 股数据，增强 Sentiment.tsx 颜色指示器"
+  - "Step 3: T8 — 增强 test_low_absorb_sentiment.py 和 Stage9Pages.test.tsx"
+  - "Step 4: T9 — 重写 api/backtest.py，创建 test_low_absorb_backtest.py"
+  - "Step 5: T9 — 修改 Backtest.tsx 接入 API，增强 BacktestOverview.tsx"
+  - "Step 6: T9 — 增强 Stage9Pages.test.tsx backtest 断言"
+  - "Step 7: T10 — 增强 report.py 和 api/reports.py"
+  - "Step 8: T10 — 重写 Reports.tsx，增强 types/lowAbsorb.ts LowAbsorbApiCloseReport"
+  - "Step 9: T10 — 创建 test_low_absorb_reports.py，修改 LowAbsorbPages.test.tsx"
+  - "Step 10: T12 — 创建 test_low_absorb_workflow.py，增强 test_low_absorb_main_api_integration.py"
+  - "Step 11: T13 — 运行全部验证命令，生成 delivery.yaml"
+
+tests_and_validation:
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_storage.py -q"
+    purpose: "T11 storage roundtrip 测试"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_sentiment.py -q"
+    purpose: "T8 情绪闸门测试"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_backtest.py -q"
+    purpose: "T9 回测 API 测试"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_reports.py -q"
+    purpose: "T10 报告生成/保存/通知测试"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+    purpose: "T12 + T13 全量 Low Absorb 后端测试"
+  - command: "cd frontend && npm.cmd run test:run"
+    purpose: "全量前端测试（含 T8/T9/T10 新增断言）"
+  - command: "cd frontend && npm.cmd run build"
+    purpose: "前端构建验证"
+  - command: "git diff --check"
+    purpose: "空白格式检查"
+  - command: "rg -n \"(<button[^\\n>]*>\\s*(买入|卖出|下单|自动交易)\\s*</button>|aria-label=\\\"(买入|卖出|下单|自动交易)\\\"|>(买入|卖出|下单|自动交易)<)\" frontend/src/pages/low-absorb frontend/src/components/low-absorb"
+    purpose: "禁用按钮文案扫描"
+
+risk_assessment:
+  risks:
+    - "T9 回测快照数据结构必须与前端 LOW_ABSORB_BACKTEST_MOCK 严格对齐，否则前端渲染断裂"
+    - "T8 A 股 provider 可能依赖网络，测试环境不可用时需要 fixture fallback"
+    - "Stage9Pages.test.tsx 被 T8 和 T9 两个任务修改，存在冲突风险"
+    - "npm build 失败可能导致交付阻塞"
+  mitigations:
+    - "后端回测数据直接映射 LOW_ABSORB_BACKTEST_MOCK 的结构和字段名"
+    - "API 调用包裹 try/except，失败时 fallback 到 fixture 值"
+    - "Stage9Pages.test.tsx 仅做追加断言，不修改已有断言"
+    - "每次前端修改后立即运行 npm run build"
+
+questions_for_codex:
+  - "[已解决] T9 回测快照数据：使用与前端 mock 结构一致的后端示例快照数据，本轮不接入真实回测引擎"
+  - "[已解决] T8 状态值统一：前后端统一为允许/观察/拦截三元状态"
+
+status:
+  ready_to_implement: true
+  blocked_reason: ""
+  codex_confirmation_required: true
+  codex_confirmed: true

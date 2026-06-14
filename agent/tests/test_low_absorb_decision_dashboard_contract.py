@@ -192,7 +192,7 @@ def test_sentiment_snapshot_returns_trading_permission_contract() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["tradingPermission"]["status"] in {"允许观察", "谨慎观察", "暂停生成"}
+    assert body["tradingPermission"]["status"] in {"允许", "观察", "拦截"}
     assert {gauge["id"] for gauge in body["gauges"]} == {"global", "a_share"}
     assert {panel["id"] for panel in body["instrumentPanels"]} == {
         "market_turnover",

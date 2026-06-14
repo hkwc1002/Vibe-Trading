@@ -123,6 +123,7 @@ export const LOW_ABSORB_MOCK: LowAbsorbWorkbenchMock = {
       cost: "18.78",
       lastPrice: "18.92",
       stopLoss: "17.88",
+      stopLossDistance: "5.49%",
       positionSize: "12%",
       initialRisk: "0.35%",
       currentRisk: "0.31%",
@@ -138,6 +139,7 @@ export const LOW_ABSORB_MOCK: LowAbsorbWorkbenchMock = {
       cost: "42.36",
       lastPrice: "43.20",
       stopLoss: "40.90",
+      stopLossDistance: "5.32%",
       positionSize: "8%",
       initialRisk: "0.28%",
       currentRisk: "0.20%",
@@ -147,6 +149,7 @@ export const LOW_ABSORB_MOCK: LowAbsorbWorkbenchMock = {
       note: "飞书已推送，等待收盘复盘。",
     },
   ],
+  blockedSignals: [],
 };
 
 export const LOW_ABSORB_SENTIMENT_MOCK: LowAbsorbSentimentMock = {

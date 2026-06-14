@@ -43,7 +43,7 @@ def test_low_absorb_contract_placeholder_endpoints() -> None:
 
     run_response = client.post("/low-absorb/backtest/run")
     assert run_response.status_code == 200
-    assert run_response.json()["status"] == "NOT_STARTED"
+    assert run_response.json()["status"] == "BACKTEST_ENGINE_NOT_CONNECTED"
 
 
 def test_notify_test_handles_missing_webhook_gracefully(monkeypatch) -> None:

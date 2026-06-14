@@ -113,8 +113,12 @@ export const lowAbsorbApi = {
   listReports: () => request<{ reports: LowAbsorbApiCloseReport[] }>("/low-absorb/reports"),
   createCloseReport: (tradeDate: string) =>
     post<LowAbsorbApiCloseReport>(`/low-absorb/reports/close?trade_date=${encodeURIComponent(tradeDate)}`),
-  notifyCloseReport: (force = false) =>
-    post<LowAbsorbApiNotificationResult>(`/low-absorb/reports/close/notify?force=${force}`),
+  notifyCloseReport: (reportId?: string, force = false) => {
+    const params = new URLSearchParams();
+    params.set("force", String(force));
+    if (reportId) params.set("report_id", reportId);
+    return post<LowAbsorbApiNotificationResult>(`/low-absorb/reports/close/notify?${params.toString()}`);
+  },
 
   getSentimentSnapshot: () => request<LowAbsorbSentimentSnapshot>("/low-absorb/sentiment/snapshot"),
   getChainSnapshot: () => request<LowAbsorbChainSnapshot>("/low-absorb/chain/snapshot"),

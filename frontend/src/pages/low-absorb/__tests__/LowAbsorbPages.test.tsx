@@ -7,9 +7,24 @@ import { Reports } from "../Reports";
 import { Sentiment } from "../Sentiment";
 import { Settings } from "../Settings";
 
-vi.mock("@/lib/lowAbsorbApi", () => ({
-  lowAbsorbApi: {
-    getSettings: vi.fn().mockResolvedValue({
+vi.mock("@/lib/lowAbsorbApi", () => {
+  const mockReports = {
+    reports: [
+      {
+        report_id: "close-20260614",
+        trade_date: "2026-06-14",
+        summary: "2026-06-14 AI Low Absorb 收盘复盘",
+        signals: [{ signal_id: "sig-1" }],
+        trade_plans: [{ plan_id: "plan-1" }],
+        positions: [{ position_id: "pos-1" }],
+        review_items: ["复核项"],
+      },
+    ],
+  };
+
+  return {
+    lowAbsorbApi: {
+      getSettings: vi.fn().mockResolvedValue({
       config: {
         min_market_turnover_cny: "500000000000",
         max_limit_break_rate: "0.45",
@@ -80,8 +95,22 @@ vi.mock("@/lib/lowAbsorbApi", () => ({
       sectors: [],
     }),
     patchCostChainModel: vi.fn(),
-  },
-}));
+    getBacktestSummary: vi.fn().mockResolvedValue({
+      metrics: [],
+      parameters: [],
+      historicalSignals: [],
+      sensitivity: [],
+      branchAttribution: [],
+      suggestions: [],
+      message: "示例数据",
+    }),
+    runBacktest: vi.fn(),
+    listReports: vi.fn().mockResolvedValue(mockReports),
+    createCloseReport: vi.fn().mockResolvedValue({}),
+    notifyCloseReport: vi.fn().mockResolvedValue({ ok: true, message: "sent" }),
+    },
+  };
+});
 
 const FORBIDDEN_ACTION_LABELS = ["买入", "卖出", "下单", "自动交易"];
 
@@ -108,7 +137,7 @@ describe("AI Low Absorb pages", () => {
       "策略回测",
       "展示低吸策略回测指标、参数、历史信号、敏感性、分支归因和改进建议的示例工作区。",
     ],
-    [Reports, "复盘报告", "展示收盘报告、人工成交复盘和策略复盘材料的占位工作区。"],
+    [Reports, "复盘报告", "展示收盘报告、人工成交复盘和策略复盘材料。"],
     [Settings, "系统设置", "管理低吸扫描阈值、数据源、飞书通知和人工执行工作台偏好。"],
   ])("renders the %s shell", async (Page, title, description) => {
     render(<Page />);
@@ -118,10 +147,14 @@ describe("AI Low Absorb pages", () => {
     expectNoBrokerExecutionLabels();
   });
 
-  it.each([[Reports]])("keeps placeholder cards on unfinished pages", (Page) => {
-    render(<Page />);
+  it("renders Reports page with report data, generate button, and review items", async () => {
+    render(<Reports />);
 
-    expect(screen.getAllByTestId("low-absorb-placeholder-card")).toHaveLength(3);
-    expect(screen.getByText("暂无业务数据接入")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "复盘报告" })).toBeInTheDocument();
+    expect(await screen.findByText("生成复盘报告")).toBeInTheDocument();
+    expect(await screen.findByText("复核事项")).toBeInTheDocument();
+    expect(await screen.findByText("复核项")).toBeInTheDocument();
+
+    expectNoBrokerExecutionLabels();
   });
 });

@@ -1,0 +1,687 @@
+task_id: "001-low-absorb-next-optimization"
+title: "Low Absorb 后续优化"
+risk_level: "A"
+created_by: "Codex"
+created_at: "2026-06-14"
+
+owners:
+  specification: "Codex"
+  implementation: "Claude Code CLI"
+  review: "Codex"
+  approval: "User"
+
+workflow:
+  required_inputs:
+    - "brief.md"
+    - "contract.yaml"
+  markdown_docs:
+    required_for_risk_levels:
+      - "A"
+    files:
+      - "spec.md"
+      - "plan.md"
+      - "tasks.md"
+  implementation_brief:
+    file: "implementation.yaml"
+    require_codex_confirmation_for:
+      - "A"
+    optional_for:
+      - "C"
+  delivery:
+    file: "delivery.yaml"
+    required: true
+  review:
+    file: "review.yaml"
+    required_for_commit: true
+
+goal: "在已完成的 AI 主板低吸基线之上，继续补齐 A 股和全球行情数据源、英伟达 AI 服务器成本链、交易建议解释、人工执行闭环、市场情绪、回测、复盘和持久化能力。"
+
+scope:
+  allow:
+    - path: "specs/active/001-low-absorb-next-optimization/implementation.yaml"
+      reason: "Claude Code 实现前理解文件"
+    - path: "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+      reason: "Claude Code 交付证据文件"
+    - path: "agent/src/low_absorb/**"
+      reason: "Low Absorb 后端模块"
+    - path: "agent/tests/test_low_absorb_*.py"
+      reason: "Low Absorb 后端测试"
+    - path: "frontend/src/pages/low-absorb/**"
+      reason: "Low Absorb 前端页面"
+    - path: "frontend/src/components/low-absorb/**"
+      reason: "Low Absorb 专用前端组件"
+    - path: "frontend/src/types/lowAbsorb.ts"
+      reason: "Low Absorb 前端类型"
+    - path: "frontend/src/mocks/lowAbsorb.ts"
+      reason: "仅允许作为 API 失败 fallback 或 demo 数据"
+  deny:
+    - path: "specs/constitution.md"
+      reason: "项目宪法不得修改"
+    - path: "AGENTS.md"
+      reason: "项目角色与流程规则不得由 Claude Code 修改"
+    - path: "package.json"
+      reason: "不得新增依赖或改脚本，除非停止并获得确认"
+    - path: "pyproject.toml"
+      reason: "不得新增依赖或改项目配置，除非停止并获得确认"
+    - path: "tsconfig*.json"
+      reason: "不得修改类型配置规避错误"
+    - path: ".github/**"
+      reason: "本任务不修改 CI 或 PR 流程"
+    - path: "agent/src/**"
+      reason: "除 agent/src/low_absorb/** 外，不得影响其他后端模块"
+    - path: "frontend/src/**"
+      reason: "除 Low Absorb 页面、组件、类型和 mock 外，不得影响其他前端模块"
+    - path: ".codex/**"
+      reason: "本地工具目录不得纳入交付"
+    - path: ".playwright-mcp/**"
+      reason: "浏览器验证产物不得纳入交付"
+    - path: "co.sh"
+      reason: "本地脚本不得纳入交付"
+    - path: "AGENT.md"
+      reason: "旧版规则文件不得纳入交付"
+
+non_goals:
+  - "不实现真实券商下单。"
+  - "不接入券商交易执行 API。"
+  - "不实现自动买卖、自动委托、一键交易或自动交易。"
+  - "不由前端直接调用外部行情源。"
+  - "不在前端硬编码真实英伟达 AI 服务器成本权重。"
+  - "不新增依赖或修改项目配置，除非先停止并获得 Codex 与用户确认。"
+  - "不由 Codex 代替 Claude Code CLI 修改源码。"
+
+baseline:
+  completed:
+    - "首页和 Low Absorb 页面中文化已完成。"
+    - "Low Absorb 禁用动作文案巡检已完成。"
+    - "数据源契约基础扩展已完成。"
+    - "A 股 provider、全球/美股 provider、fallback provider 已有初始拆分。"
+    - "成本链模型基础字段和三类版本已有基线。"
+    - "设置页基础字段已有基线。"
+    - "上一轮 Codex 提交前审查结论为 APPROVED_FOR_COMMIT。"
+
+requirements:
+  - id: "R1"
+    text: "Claude Code 必须先产出 implementation.yaml，并在 A 类任务中等待 Codex 确认后再实现。"
+    priority: "MUST"
+    acceptance:
+      - "implementation.yaml 使用 specs/templates/implementation.yaml 结构。"
+      - "implementation.yaml 列出本轮任务编号、修改文件、测试计划、风险和停止条件。"
+    evidence_required:
+      - "implementation.yaml"
+      - "Codex 确认记录"
+  - id: "R2"
+    text: "A 股数据源必须通过 Python 后端 provider 接入，数据缺失、异常或过期时 fail-closed。"
+    priority: "MUST"
+    acceptance:
+      - "A 股 provider 返回数据源标识、市场日期、采集时间、新鲜度状态和失败原因。"
+      - "stale data 不生成信号或交易计划。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_data_sources.py"
+      - "agent/tests/test_low_absorb_scanner.py"
+  - id: "R3"
+    text: "全球行情和美股行情必须由后端数据源封装，并能服务市场情绪交易许可。"
+    priority: "MUST"
+    acceptance:
+      - "全球风险偏好异常时情绪结论为观察或拦截。"
+      - "不使用 AI 生成行情数据。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_data_sources.py"
+      - "agent/tests/test_low_absorb_sentiment.py"
+  - id: "R4"
+    text: "英伟达 AI 服务器成本链必须包含来源、来源类型、置信度、as_of 和估算说明，并支持 custom/manual 保存。"
+    priority: "MUST"
+    acceptance:
+      - "GB200 NVL72 和 GB300 NVL72 只读。"
+      - "custom/manual 可保存并持久化。"
+      - "低置信度数据可展示但不单独决定交易建议。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_chain_matrix.py"
+      - "agent/tests/test_low_absorb_chain_api.py"
+  - id: "R5"
+    text: "AI 产业链页面必须展示成本链、板块指标、股票角色、来源和置信度。"
+    priority: "MUST"
+    acceptance:
+      - "8 个内部标签可切换。"
+      - "成本链来源、置信度、as_of 可展示。"
+      - "前端不硬编码真实成本权重。"
+    evidence_required:
+      - "frontend/src/pages/low-absorb/__tests__/DecisionDashboardUi.test.tsx"
+  - id: "R6"
+    text: "信号排序和交易计划必须消费 AI 分支强度与成本链 signal weight，并生成可读解释。"
+    priority: "MUST"
+    acceptance:
+      - "技术条件相近时强分支排序更高。"
+      - "弱分支存在降级或拦截原因。"
+      - "交易计划包含 AI 产业链解释。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_scanner.py"
+      - "agent/tests/test_low_absorb_trade_plan.py"
+  - id: "R7"
+    text: "Workbench 必须补齐详情抽屉和底部统一人工动作栏。"
+    priority: "MUST"
+    acceptance:
+      - "详情抽屉展示信号、计划、飞书预览、人工成交和风险解释。"
+      - "底部动作栏随信号、计划、持仓上下文变化。"
+      - "无禁用交易按钮文案。"
+    evidence_required:
+      - "frontend/src/pages/low-absorb/__tests__/WorkbenchUi.test.tsx"
+  - id: "R8"
+    text: "市场情绪必须形成交易许可系统，展示全球情绪、A 股情绪、六个闸门和允许/观察/拦截结论。"
+    priority: "MUST"
+    acceptance:
+      - "后端返回交易许可快照。"
+      - "前端用仪表化页面展示结论和事件流。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_sentiment.py"
+      - "frontend/src/pages/low-absorb/__tests__/Stage9Pages.test.tsx"
+  - id: "R9"
+    text: "策略回测必须展示总览、参数、历史信号、敏感性、分支归因和改进建议。"
+    priority: "SHOULD"
+    acceptance:
+      - "回测页面不只是静态占位。"
+      - "回测结果不构成收益承诺。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_backtest.py"
+      - "frontend/src/pages/low-absorb/__tests__/Stage9Pages.test.tsx"
+  - id: "R10"
+    text: "收盘复盘报告必须可生成、保存、读取、展示并可推送飞书报告卡片。"
+    priority: "SHOULD"
+    acceptance:
+      - "报告区分系统建议和人工执行结果。"
+      - "前端可查看当日摘要和历史归档。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_reports.py"
+      - "frontend/src/pages/low-absorb/__tests__/LowAbsorbPages.test.tsx"
+  - id: "R11"
+    text: "Low Absorb 仓储必须支持关键业务对象持久化 roundtrip。"
+    priority: "MUST"
+    acceptance:
+      - "信号、计划、成交、持仓、风险、报告、通知、设置和成本链 reload 后可读取。"
+      - "敏感信息不明文回显。"
+    evidence_required:
+      - "agent/tests/test_low_absorb_storage.py"
+  - id: "R12"
+    text: "交付前必须完成自我审查、重新验证并产出 delivery.yaml。"
+    priority: "MUST"
+    acceptance:
+      - "delivery.yaml 使用最新版模板。"
+      - "后端 Low Absorb 测试、前端测试、前端构建和必要页面验证有证据。"
+      - "金融安全边界检查有证据。"
+    evidence_required:
+      - "delivery.yaml"
+
+tasks:
+  - id: "T0"
+    title: "实现前确认门禁"
+    depends_on: []
+    allow_files:
+      - "specs/active/001-low-absorb-next-optimization/implementation.yaml"
+    deny_files:
+      - "所有源码文件"
+      - "specs/active/001-low-absorb-next-optimization/spec.md"
+      - "specs/active/001-low-absorb-next-optimization/plan.md"
+    steps:
+      - "阅读 brief.md、contract.yaml、spec.md、plan.md、tasks.md。"
+      - "按 specs/templates/implementation.yaml 生成 implementation.yaml。"
+      - "列出本轮任务编号、预计修改文件、测试计划、风险点和停止条件。"
+      - "A 类任务等待 Codex 确认后再实现。"
+    validation:
+      - command: "Test-Path specs\\active\\001-low-absorb-next-optimization\\implementation.yaml"
+        expected: "返回 True。"
+    acceptance:
+      - "implementation.yaml 存在且结构符合模板。"
+      - "Codex 确认前不得修改源码。"
+  - id: "T1"
+    title: "A 股数据源适配闭环"
+    depends_on:
+      - "T0"
+    allow_files:
+      - "agent/src/low_absorb/a_stock_provider.py"
+      - "agent/src/low_absorb/data_provider.py"
+      - "agent/src/low_absorb/fallback_provider.py"
+      - "agent/src/low_absorb/config.py"
+      - "agent/tests/test_low_absorb_data_sources.py"
+      - "agent/tests/test_low_absorb_scanner.py"
+    deny_files:
+      - "frontend/**"
+      - "agent/src/** 非 low_absorb 目录"
+      - "项目依赖和配置文件"
+    steps:
+      - "补齐 A 股 provider 的数据源标识、市场日期、采集时间、新鲜度状态和失败原因。"
+      - "确保数据缺失、字段缺失、接口异常或超过 max_data_staleness_seconds 时 fail-closed。"
+      - "完善 fallback 触发条件，fallback 必须可解释。"
+      - "补充正常、失败、过期和 scanner stale 拦截测试。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_data_sources.py agent/tests/test_low_absorb_scanner.py -q"
+        expected: "相关测试通过。"
+    acceptance:
+      - "A 股数据源通过 MarketDataProvider 契约接入。"
+      - "数据源异常有明确错误原因。"
+      - "stale data 不生成信号或交易计划。"
+  - id: "T2"
+    title: "全球行情与美股行情情绪输入"
+    depends_on:
+      - "T1"
+    allow_files:
+      - "agent/src/low_absorb/global_market_provider.py"
+      - "agent/src/low_absorb/data_provider.py"
+      - "agent/src/low_absorb/sentiment.py"
+      - "agent/src/low_absorb/api/sentiment.py"
+      - "agent/tests/test_low_absorb_data_sources.py"
+      - "agent/tests/test_low_absorb_sentiment.py"
+    deny_files:
+      - "frontend/**"
+      - "package.json"
+      - "pyproject.toml"
+    steps:
+      - "封装全球行情和美股行情输入，优先使用已有依赖或标准库公开源。"
+      - "如果必须新增 yfinance 或其他依赖，停止并请求确认。"
+      - "让 sentiment 区分 A 股情绪和全球风险偏好。"
+      - "全球数据异常时返回观察或拦截，不返回允许。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_data_sources.py agent/tests/test_low_absorb_sentiment.py -q"
+        expected: "相关测试通过。"
+    acceptance:
+      - "市场情绪能消费全球风险偏好数据。"
+      - "数据异常不误判为允许。"
+  - id: "T3"
+    title: "英伟达 AI 服务器成本链资料与 custom/manual 保存"
+    depends_on:
+      - "T1"
+    allow_files:
+      - "agent/src/low_absorb/models.py"
+      - "agent/src/low_absorb/config.py"
+      - "agent/src/low_absorb/chain_matrix.py"
+      - "agent/src/low_absorb/api/chain.py"
+      - "agent/src/low_absorb/storage.py"
+      - "agent/tests/test_low_absorb_chain_matrix.py"
+      - "agent/tests/test_low_absorb_chain_api.py"
+    deny_files:
+      - "frontend/**"
+      - "非 Low Absorb 后端目录"
+      - "项目依赖和配置文件"
+    steps:
+      - "补齐成本链字段：组件、权重、权重区间、代际增幅、板块、A 股龙头、主板映射、信号权重、来源、来源类型、置信度、as_of、估算说明。"
+      - "区分官方资料、券商估算、产业研究、手动维护。"
+      - "禁止通过 API 修改 GB200 NVL72 和 GB300 NVL72。"
+      - "仅允许保存 custom/manual，并持久化。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py -q"
+        expected: "相关测试通过。"
+    acceptance:
+      - "成本链字段完整。"
+      - "每条数据包含来源、来源类型、置信度和 as_of。"
+      - "custom/manual 可保存，内置版本不可修改。"
+  - id: "T4"
+    title: "AI 产业链板块工作台前后端闭环"
+    depends_on:
+      - "T3"
+    allow_files:
+      - "agent/src/low_absorb/api/chain.py"
+      - "frontend/src/types/lowAbsorb.ts"
+      - "frontend/src/pages/low-absorb/Chain.tsx"
+      - "frontend/src/components/low-absorb/chain/ChainOverview.tsx"
+      - "frontend/src/components/low-absorb/chain/BranchStrengthTable.tsx"
+      - "frontend/src/components/low-absorb/chain/StockMappingTable.tsx"
+      - "frontend/src/pages/low-absorb/__tests__/DecisionDashboardUi.test.tsx"
+    deny_files:
+      - "非 Low Absorb 前端页面"
+      - "frontend/src/mocks/lowAbsorb.ts 作为主数据源"
+    steps:
+      - "让 chain snapshot 返回成本链、板块指标、股票角色、来源和置信度。"
+      - "页面展示 8 个内部标签。"
+      - "成本总览展示来源类型、置信度、as_of 和估算说明。"
+      - "sector 页最多展示 5 类股票角色。"
+    validation:
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "AI 产业链页面展示成本链来源和置信度。"
+      - "8 个内部标签可切换。"
+      - "前端无真实成本权重硬编码。"
+  - id: "T5"
+    title: "成本链权重进入信号排序和交易计划解释"
+    depends_on:
+      - "T3"
+    allow_files:
+      - "agent/src/low_absorb/scanner.py"
+      - "agent/src/low_absorb/chain_matrix.py"
+      - "agent/src/low_absorb/trade_plan.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/tests/test_low_absorb_scanner.py"
+      - "agent/tests/test_low_absorb_trade_plan.py"
+    deny_files:
+      - "frontend/**"
+      - "数据源 provider 文件"
+    steps:
+      - "排序使用技术条件评分、AI 分支强度、成本链 signal weight、数据新鲜度和风险预算约束。"
+      - "弱分支且趋势斜率为负的标的降级或拦截。"
+      - "技术条件相近时强成本增量板块优先级更高。"
+      - "交易计划输出 AI 产业链解释字段。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_scanner.py agent/tests/test_low_absorb_trade_plan.py -q"
+        expected: "相关测试通过。"
+    acceptance:
+      - "排序消费 AI 分支强度和成本链权重。"
+      - "弱分支有降级或拦截原因。"
+      - "交易计划有可读 AI 产业链解释。"
+  - id: "T6"
+    title: "Workbench 详情抽屉与交易计划解释展示"
+    depends_on:
+      - "T5"
+    allow_files:
+      - "frontend/src/pages/low-absorb/Workbench.tsx"
+      - "frontend/src/components/low-absorb/workbench/FeishuPreviewCard.tsx"
+      - "frontend/src/components/low-absorb/workbench/ManualFillDrawer.tsx"
+      - "frontend/src/components/low-absorb/workbench/TradePlanPanel.tsx"
+      - "frontend/src/types/lowAbsorb.ts"
+      - "frontend/src/pages/low-absorb/__tests__/WorkbenchUi.test.tsx"
+    deny_files:
+      - "后端源码"
+      - "非 Low Absorb 前端文件"
+    steps:
+      - "选择信号、交易计划或持仓行后显示右侧详情。"
+      - "交易计划详情展示 AI 产业链解释。"
+      - "飞书预览只展示推荐内容。"
+      - "人工成交表单使用记录人工成交语义。"
+    validation:
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "详情抽屉可打开关闭。"
+      - "AI 产业链解释可展示。"
+      - "无禁用动作按钮文案。"
+  - id: "T7"
+    title: "Workbench 底部统一动作栏"
+    depends_on:
+      - "T6"
+    allow_files:
+      - "frontend/src/pages/low-absorb/Workbench.tsx"
+      - "frontend/src/components/low-absorb/workbench/SignalPanel.tsx"
+      - "frontend/src/components/low-absorb/workbench/TradePlanPanel.tsx"
+      - "frontend/src/components/low-absorb/workbench/PositionPanel.tsx"
+      - "frontend/src/pages/low-absorb/__tests__/WorkbenchUi.test.tsx"
+    deny_files:
+      - "后端源码"
+      - "其他页面"
+    steps:
+      - "信号上下文只展示生成交易计划、推送飞书、标记失效。"
+      - "计划上下文只展示复制人工下单信息、推送飞书、记录人工成交、标记失效。"
+      - "持仓上下文只展示记录卖出、调整备注、生成风控提醒、归档持仓。"
+      - "动作栏根据选中对象变化。"
+    validation:
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "动作栏随上下文切换。"
+      - "动作全部为人工执行语义。"
+  - id: "T8"
+    title: "市场情绪交易许可系统闭环"
+    depends_on:
+      - "T2"
+    allow_files:
+      - "agent/src/low_absorb/sentiment.py"
+      - "agent/src/low_absorb/api/sentiment.py"
+      - "agent/tests/test_low_absorb_sentiment.py"
+      - "frontend/src/pages/low-absorb/Sentiment.tsx"
+      - "frontend/src/components/low-absorb/sentiment/TwinSentimentClock.tsx"
+      - "frontend/src/components/low-absorb/sentiment/SentimentRulesPanel.tsx"
+      - "frontend/src/components/low-absorb/sentiment/SocialMonitorPreview.tsx"
+      - "frontend/src/components/low-absorb/sentiment/NewsMonitorPreview.tsx"
+      - "frontend/src/pages/low-absorb/__tests__/Stage9Pages.test.tsx"
+    deny_files:
+      - "agent/src/low_absorb/scanner.py"
+      - "frontend/src/pages/low-absorb/Workbench.tsx"
+    steps:
+      - "后端返回全球情绪、A 股情绪、六个闸门和交易许可结论。"
+      - "每个闸门返回状态、数值、阈值或解释。"
+      - "前端用仪表或 instrument panel 展示。"
+      - "数据异常时返回观察或拦截。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_sentiment.py -q"
+        expected: "后端情绪测试通过。"
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "交易许可快照可用。"
+      - "前端清晰展示允许、观察或拦截。"
+  - id: "T9"
+    title: "策略回测页面与快照契约增强"
+    depends_on:
+      - "T5"
+    allow_files:
+      - "agent/src/low_absorb/api/backtest.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/tests/test_low_absorb_backtest.py"
+      - "frontend/src/types/lowAbsorb.ts"
+      - "frontend/src/pages/low-absorb/Backtest.tsx"
+      - "frontend/src/components/low-absorb/backtest/BacktestOverview.tsx"
+      - "frontend/src/components/low-absorb/backtest/BacktestParameterPanel.tsx"
+      - "frontend/src/components/low-absorb/backtest/HistoricalSignalTable.tsx"
+      - "frontend/src/components/low-absorb/backtest/SensitivityMatrix.tsx"
+      - "frontend/src/components/low-absorb/backtest/BranchAttributionPanel.tsx"
+      - "frontend/src/components/low-absorb/backtest/ImprovementSuggestions.tsx"
+      - "frontend/src/pages/low-absorb/__tests__/Stage9Pages.test.tsx"
+    deny_files:
+      - "数据源 provider 文件"
+      - "Workbench 页面"
+    steps:
+      - "后端回测快照返回总览指标、参数、历史信号、敏感性、分支归因和改进建议。"
+      - "前端展示回测工作台，不保留纯静态占位。"
+      - "回测解释区分策略有效和失效场景。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_backtest.py -q"
+        expected: "后端回测测试通过。"
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "回测快照契约完整。"
+      - "回测页面可解释有效和失效场景。"
+      - "无收益承诺或交易执行语义。"
+  - id: "T10"
+    title: "收盘复盘报告生成、归档和页面展示"
+    depends_on:
+      - "T5"
+      - "T11"
+    allow_files:
+      - "agent/src/low_absorb/report.py"
+      - "agent/src/low_absorb/api/reports.py"
+      - "agent/src/low_absorb/notifier.py"
+      - "agent/src/low_absorb/storage.py"
+      - "agent/tests/test_low_absorb_reports.py"
+      - "frontend/src/types/lowAbsorb.ts"
+      - "frontend/src/pages/low-absorb/Reports.tsx"
+      - "frontend/src/pages/low-absorb/__tests__/LowAbsorbPages.test.tsx"
+    deny_files:
+      - "agent/src/low_absorb/scanner.py"
+      - "其他前端页面"
+    steps:
+      - "生成包含信号、计划、飞书、人工成交、持仓风险、失效原因和次日监督事项的收盘报告。"
+      - "GET /low-absorb/reports 返回已存储报告。"
+      - "POST /low-absorb/reports/close 生成并保存报告。"
+      - "POST /low-absorb/reports/close/notify 推送最新或指定报告。"
+      - "前端展示当日摘要和历史归档。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_reports.py -q"
+        expected: "后端报告测试通过。"
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "报告可生成、保存、读取。"
+      - "报告区分系统建议与人工执行。"
+      - "前端可查看历史归档。"
+  - id: "T11"
+    title: "持久化仓储扩展"
+    depends_on:
+      - "T3"
+    allow_files:
+      - "agent/src/low_absorb/storage.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/tests/test_low_absorb_storage.py"
+    deny_files:
+      - "前端文件"
+      - "项目依赖和配置文件"
+    steps:
+      - "保留测试用内存存储。"
+      - "优先用标准库 JSON 或 sqlite3 完成本地持久化。"
+      - "持久化信号、计划、成交、持仓、风险、报告、通知、设置和成本链。"
+      - "reload 后关键数据可读取。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_storage.py -q"
+        expected: "存储测试通过。"
+    acceptance:
+      - "关键业务对象可持久化。"
+      - "reload 后数据可读取。"
+      - "敏感信息不明文回显。"
+  - id: "T12"
+    title: "端到端人工执行业务流测试"
+    depends_on:
+      - "T5"
+      - "T6"
+      - "T7"
+      - "T8"
+      - "T10"
+      - "T11"
+    allow_files:
+      - "agent/tests/test_low_absorb_workflow.py"
+      - "agent/tests/test_low_absorb_main_api_integration.py"
+      - "frontend/src/pages/low-absorb/__tests__/DecisionDashboardUi.test.tsx"
+      - "frontend/src/pages/low-absorb/__tests__/WorkbenchUi.test.tsx"
+    deny_files:
+      - "生产源码"
+      - "项目配置文件"
+    steps:
+      - "覆盖 signal 到 trade plan 到 Feishu recommendation 到 manual fill 到 position supervision 到 close report 主流程。"
+      - "飞书测试不得默认调用真实 Webhook。"
+      - "覆盖人工动作标签和禁用文案不存在。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+        expected: "Low Absorb 后端测试通过。"
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "主流程端到端测试通过。"
+      - "FastAPI app 包含 Low Absorb 路由。"
+      - "金融安全边界测试通过。"
+  - id: "T13"
+    title: "交付、自查和验证门禁"
+    depends_on:
+      - "T1"
+      - "T2"
+      - "T3"
+      - "T4"
+      - "T5"
+      - "T6"
+      - "T7"
+      - "T8"
+      - "T9"
+      - "T10"
+      - "T11"
+      - "T12"
+    allow_files:
+      - "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+    deny_files:
+      - "源码文件"
+      - "specs/active/001-low-absorb-next-optimization/review.yaml"
+    steps:
+      - "按 specs/templates/delivery.yaml 生成 delivery.yaml。"
+      - "列出完成任务、修改文件、需求追踪、自我审查、验证结果、页面验证、风险检查和建议暂存文件。"
+      - "自查发现问题必须先修复并重新验证。"
+      - "不得提交、推送或创建 PR。"
+    validation:
+      - command: "git diff --check"
+        expected: "无 diff 空白错误。"
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+        expected: "Low Absorb 后端测试通过。"
+      - command: "cd frontend && npm.cmd run test:run && npm.cmd run build"
+        expected: "前端测试和构建通过。"
+    acceptance:
+      - "delivery.yaml 使用最新版模板。"
+      - "自我审查记录完整。"
+      - "无金融安全边界违规。"
+      - "无未解释任务外文件改动。"
+
+validation:
+  commands:
+    - command: "git diff --check"
+      required: true
+      risk_if_skipped: "无法确认提交前无空白格式错误。"
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+      required: true
+      risk_if_skipped: "无法确认 Low Absorb 后端行为未回归。"
+    - command: "cd frontend && npm.cmd run test:run"
+      required: true
+      risk_if_skipped: "无法确认 Low Absorb 前端页面和组件未回归。"
+    - command: "cd frontend && npm.cmd run build"
+      required: true
+      risk_if_skipped: "无法确认 TypeScript 类型检查和生产构建可用。"
+    - command: "rg -n \"(<button[^\\n>]*>\\s*(买入|卖出|下单|自动交易)\\s*</button>|aria-label=\\\"(买入|卖出|下单|自动交易)\\\"|>(买入|卖出|下单|自动交易)<)\" frontend/src/pages/low-absorb frontend/src/components/low-absorb"
+      required: true
+      risk_if_skipped: "无法确认 Low Absorb 页面没有禁用交易按钮文案。"
+  page_checks:
+    - url: "/"
+      required: false
+      expected: "首页可打开，品牌显示 Elio 胡交易看板。"
+    - url: "/low-absorb"
+      required: true
+      expected: "交易工作台可打开，无禁用动作按钮文案。"
+    - url: "/low-absorb/sentiment"
+      required: true
+      expected: "市场情绪页展示交易许可结论。"
+    - url: "/low-absorb/chain"
+      required: true
+      expected: "AI 产业链页展示成本链来源和置信度。"
+    - url: "/low-absorb/backtest"
+      required: true
+      expected: "策略回测页展示总览、参数、归因和敏感性。"
+    - url: "/low-absorb/reports"
+      required: true
+      expected: "复盘报告页展示当日摘要和历史归档。"
+    - url: "/low-absorb/settings"
+      required: false
+      expected: "设置页敏感信息掩码显示。"
+
+financial_safety:
+  applies: true
+  forbidden_capabilities:
+    - "真实券商下单"
+    - "自动买卖"
+    - "自动委托"
+    - "券商交易执行 API"
+    - "一键交易"
+  forbidden_button_labels:
+    - "买入"
+    - "卖出"
+    - "下单"
+    - "自动交易"
+  allowed_manual_labels:
+    - "推送飞书"
+    - "复制人工下单信息"
+    - "记录人工成交"
+    - "标记失效"
+    - "生成风控提醒"
+    - "记录卖出"
+    - "生成复盘报告"
+
+stop_conditions:
+  - "需要修改 scope.allow 之外的文件。"
+  - "需求与金融安全边界冲突。"
+  - "需要新增依赖或修改项目配置。"
+  - "接口契约缺失或与现有实现冲突。"
+  - "外部数据源需要密钥、付费账号或无法在本地验证。"
+  - "指定验证命令无法运行且无法判断风险。"
+  - "发现真实交易执行、自动交易或券商执行 API 风险。"
+  - "需要 Codex 修改源码或代替 Claude Code 实现。"
+
+commit_policy:
+  require_codex_review: true
+  require_user_authorization: true
+  only_stage_approved_files: true
+  forbidden_git_commands:
+    - "git add ."
+    - "git add -A"
+    - "git commit -am"
+  required_pre_commit_check:
+    - "review.yaml verdict 必须为 APPROVED_FOR_COMMIT。"
+    - "git diff --cached --name-only 必须只包含 review.yaml 中 approved_for_commit.allowed_files。"
+    - "提交、推送、创建 Draft PR 前必须有用户明确授权。"

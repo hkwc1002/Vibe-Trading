@@ -48,6 +48,7 @@ def _default_storage() -> LowAbsorbRepository:
 
 _STORAGE: LowAbsorbRepository = _default_storage()
 _DATA_PROVIDER = None
+_blocked_signals: list[LowAbsorbSignal] = []
 
 
 class ScanTailRequest(BaseModel):
@@ -112,9 +113,10 @@ def reset_workbench_state() -> None:
 def set_workbench_storage(storage: LowAbsorbRepository, *, data_provider=None) -> None:
     """Inject Low Absorb storage/provider for tests and local runtime wiring."""
 
-    global _STORAGE, _DATA_PROVIDER
+    global _STORAGE, _DATA_PROVIDER, _blocked_signals
     _STORAGE = storage
     _DATA_PROVIDER = data_provider
+    _blocked_signals = []
 
 
 def get_workbench_storage() -> LowAbsorbRepository:
@@ -356,6 +358,7 @@ def get_workbench() -> dict[str, list[object]]:
         "risk_matrix": build_position_risk_matrix(positions),
         "notifications": list(_STORAGE.notifications.values()),
         "reports": list(_STORAGE.reports.values()),
+        "blocked_signals": list(_blocked_signals),
     }
 
 
@@ -380,6 +383,8 @@ def scan_tail(request: ScanTailRequest | None = None) -> dict[str, object]:
         _STORAGE.signals[signal.signal_id] = signal
     for plan in result.trade_plans:
         _STORAGE.trade_plans[plan.plan_id] = plan
+    global _blocked_signals
+    _blocked_signals = list(result.blocked_signals)
     _STORAGE.save()
     freshness = getattr(provider, "get_freshness_info", lambda: {})()
     is_fallback = any(

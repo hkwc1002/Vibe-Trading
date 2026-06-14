@@ -1,9 +1,10 @@
 import type { LowAbsorbBacktestMetric } from "@/types/lowAbsorb";
 
 export function BacktestMetricCards({ metrics }: { metrics: LowAbsorbBacktestMetric[] }) {
+  const cards = Array.isArray(metrics) ? metrics : [];
   return (
     <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {metrics.map((metric) => (
+      {cards.map((metric) => (
         <article key={metric.id} className="rounded-lg border bg-card p-4 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground">{metric.label}</p>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{metric.value}</p>

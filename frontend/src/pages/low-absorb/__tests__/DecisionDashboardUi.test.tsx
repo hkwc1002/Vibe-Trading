@@ -302,7 +302,7 @@ describe("Low Absorb decision dashboards", () => {
     expect(screen.getAllByText("初始风险").length).toBeGreaterThan(0);
     expect(screen.getAllByText("当前风险").length).toBeGreaterThan(0);
     expect(screen.getAllByText("R 倍数").length).toBeGreaterThan(0);
-    expect(screen.getByText("止损距离")).toBeInTheDocument();
+    expect(screen.getAllByText("止损距离").length).toBeGreaterThan(0);
     expect(screen.getByTestId("position-row-pos-601138-plan-601138-20260612")).toBeInTheDocument();
   });
 

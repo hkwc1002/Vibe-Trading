@@ -225,4 +225,39 @@ describe("Low Absorb Workbench UI", () => {
     expect(await screen.findByText("演示数据模式")).toBeInTheDocument();
     expect(screen.getAllByText(LOW_ABSORB_MOCK.signals[0].stockName).length).toBeGreaterThan(0);
   });
+
+  it("renders blocked signals in overview and shows blockReason in detail drawer on click", async () => {
+    const blockedSignal = {
+      ...API_SIGNAL,
+      signal_id: "sig-603986-20260612",
+      stock_code: "603986",
+      stock_name: "儒竞科技",
+      block_reason: "组合风险预算已满：已分配 60%，超出 60% 上限",
+    };
+    api.getSnapshot.mockResolvedValueOnce({
+      ...API_SNAPSHOT,
+      blocked_signals: [blockedSignal],
+    });
+
+    render(<Workbench />);
+    const user = userEvent.setup();
+
+    await screen.findAllByText(/风险预算拦截信号/);
+
+    // Blocked signal appears in overview
+    expect(screen.getByText(/风险预算拦截信号/)).toBeInTheDocument();
+    expect(screen.getByText(/儒竞科技/)).toBeInTheDocument();
+
+    // Click the blocked signal button to select it
+    await user.click(screen.getByRole("button", { name: /儒竞科技/ }));
+
+    // Detail drawer shows block reason
+    expect(screen.getByText(/拦截原因：.*组合风险预算已满/)).toBeInTheDocument();
+
+    // Action bar shows safe-only actions for blocked signal (not 生成交易计划/推送飞书 in bottom bar)
+    expect(screen.getAllByText("标记失效").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("生成风控提醒").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("调整备注").length).toBeGreaterThan(0);
+    expectNoStandaloneExecutionLabels();
+  });
 });
