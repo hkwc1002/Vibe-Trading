@@ -82,6 +82,8 @@ def build_sentiment_permission_snapshot(
     global_risk_error: str | None = None,
     a_share_turnover_cny: Decimal | None = None,
     a_share_limit_break_rate: Decimal | None = None,
+    a_share_advance_count: int | None = None,
+    a_share_decline_count: int | None = None,
 ) -> dict[str, object]:
     """Return a trading-permission view for the sentiment dashboard.
 
@@ -92,10 +94,28 @@ def build_sentiment_permission_snapshot(
     """
     config = config or LowAbsorbConfig()
 
-    # ── Resolve A-share inputs (fall back to fixtures when not supplied) ──
-    turnover = a_share_turnover_cny if a_share_turnover_cny is not None else Decimal("612000000000")
-    limit_break = a_share_limit_break_rate if a_share_limit_break_rate is not None else Decimal("0.20")
-    a_share_ok = turnover > config.min_market_turnover_cny and limit_break < config.max_limit_break_rate
+    # ── Resolve A-share inputs ──
+    # When the caller provides global_risk_appetite (real-data path) but
+    # A-share values are None, the data was expected but unavailable.
+    a_share_provided = a_share_turnover_cny is not None and a_share_limit_break_rate is not None
+    a_share_data_missing = False
+    global_provided = global_risk_appetite is not None and global_risk_error is None
+
+    if global_provided and not a_share_provided:
+        # Real-data path: A-share breadth was requested but unavailable
+        a_share_ok = False
+        a_share_data_missing = True
+        turnover = a_share_turnover_cny
+        limit_break = a_share_limit_break_rate
+    elif a_share_provided:
+        turnover = a_share_turnover_cny
+        limit_break = a_share_limit_break_rate
+        a_share_ok = turnover > config.min_market_turnover_cny and limit_break < config.max_limit_break_rate  # type: ignore[operator]
+    else:
+        # Legacy / all-fixture path: use default values
+        turnover = Decimal("612000000000")
+        limit_break = Decimal("0.20")
+        a_share_ok = turnover > config.min_market_turnover_cny and limit_break < config.max_limit_break_rate
 
     # ── Resolve global risk appetite ──
     global_available = global_risk_appetite is not None and global_risk_error is None
@@ -109,7 +129,10 @@ def build_sentiment_permission_snapshot(
         global_detail = global_risk_error or "全球行情数据不可用，无法评估风险偏好。"
 
     # ── Compute overall permission ──
-    if not a_share_ok:
+    if a_share_data_missing:
+        status = "拦截"
+        blocked = ["A 股行情数据不可用，无法判断市场宽度闸门"]
+    elif not a_share_ok:
         status = "拦截"
         blocked = ["市场成交额或炸板率未通过宏观闸门"]
     elif not global_available:
@@ -146,30 +169,30 @@ def build_sentiment_permission_snapshot(
             {
                 "id": "a_share",
                 "label": "A 股情绪",
-                "score": 71 if a_share_ok else 30,
-                "status": "允许" if a_share_ok else status,
-                "detail": "成交额达标，炸板率低于阈值。" if a_share_ok else "成交额或炸板率未通过。",
+                "score": 0 if a_share_data_missing else (71 if a_share_ok else 30),
+                "status": "数据缺失" if a_share_data_missing else ("允许" if a_share_ok else status),
+                "detail": "A 股行情数据不可用。" if a_share_data_missing else ("成交额达标，炸板率低于阈值。" if a_share_ok else "成交额或炸板率未通过。"),
             },
         ],
         "instrumentPanels": [
             {
                 "id": "market_turnover",
                 "label": "成交额闸门",
-                "value": str(turnover),
-                "status": "通过" if turnover > config.min_market_turnover_cny else "拦截",
-                "explanation": "两市成交额必须超过配置阈值。",
+                "value": str(turnover) if not a_share_data_missing else "—",
+                "status": "数据缺失" if a_share_data_missing else ("通过" if turnover > config.min_market_turnover_cny else "拦截"),
+                "explanation": "两市成交额必须超过配置阈值。" if not a_share_data_missing else "A 股行情数据不可用，无法计算成交额闸门。",
             },
             {
                 "id": "limit_break",
                 "label": "炸板率闸门",
-                "value": str(limit_break),
-                "status": "通过" if limit_break < config.max_limit_break_rate else "拦截",
-                "explanation": "炸板率过高时暂停生成新计划。",
+                "value": str(limit_break) if not a_share_data_missing else "—",
+                "status": "数据缺失" if a_share_data_missing else ("通过" if limit_break < config.max_limit_break_rate else "拦截"),
+                "explanation": "炸板率过高时暂停生成新计划。" if not a_share_data_missing else "A 股行情数据不可用，无法计算炸板率闸门。",
             },
             {
                 "id": "advance_decline",
                 "label": "涨跌家数宽度",
-                "value": "—",
+                "value": f"{a_share_advance_count} / {a_share_decline_count}" if a_share_advance_count is not None and a_share_decline_count is not None else "—",
                 "status": "观察",
                 "explanation": "上涨家数占优，但不是单独放行条件。",
             },

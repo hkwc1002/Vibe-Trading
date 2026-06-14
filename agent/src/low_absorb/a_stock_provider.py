@@ -46,15 +46,11 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
     def _get_json(self, url: str, params: dict[str, object] | None = None) -> dict[str, object]:
         return self.http_client.get_json(url, params)
 
-    def _fetch_limit_break_rate(self) -> Decimal | None:
-        """Fetch live limit-break rate from Eastmoney A-share stock list.
+    def _fetch_limit_break_rate(self) -> tuple[Decimal | None, int | None, int | None]:
+        """Fetch limit-break, advance and decline counts from Eastmoney A-share list.
 
-        Returns the ratio of 涨停 (limit-up, ≥9.8%) and 跌停 (limit-down,
-        ≤-9.8%) stocks to the total A-share universe. Paginates until the
-        full ``total`` is covered so that a truncated first page cannot
-        systematically underestimate the rate.
-
-        Returns ``None`` (fail-closed) when:
+        Returns ``(limit_break_rate, advance_count, decline_count)`` where
+        all three are ``None`` (fail-closed) when:
         - The endpoint is unavailable or returns an error.
         - ``total <= 0`` or ``rows`` is not a list.
         - Fewer rows are received than ``total`` after exhausting pages
@@ -86,7 +82,7 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
                 total = data_obj.get("total", 0) if isinstance(data_obj.get("total"), (int, float)) else 0
 
                 if total <= 0 or not isinstance(rows, list):
-                    return None
+                    return None, None, None
 
                 all_rows.extend(row for row in rows if isinstance(row, dict))
 
@@ -94,20 +90,27 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
                     break
             else:
                 # Exhausted pages without covering total → truncated response
-                return None
+                return None, None, None
 
             limit_up = 0
             limit_down = 0
+            advance = 0
+            decline = 0
             for row in all_rows:
                 pct = _decimal(row.get("f3"))
                 if pct >= Decimal("9.8"):
                     limit_up += 1
                 elif pct <= Decimal("-9.8"):
                     limit_down += 1
+                if pct > 0:
+                    advance += 1
+                elif pct < 0:
+                    decline += 1
 
-            return Decimal(str(limit_up + limit_down)) / Decimal(str(total))
+            rate = Decimal(str(limit_up + limit_down)) / Decimal(str(total))
+            return rate, advance, decline
         except Exception:
-            return None
+            return None, None, None
 
     def get_market_breadth(self, trade_date: date, at: datetime) -> MarketBreadth | None:
         try:
@@ -125,7 +128,8 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
             if turnover <= 0:
                 self._mark_status("market_breadth", ok=False, data_source="eastmoney_index", message="empty turnover")
                 return None
-            limit_break_rate = self._fetch_limit_break_rate()
+            limit_break_result = self._fetch_limit_break_rate()
+            limit_break_rate, advance_count, decline_count = limit_break_result
             if limit_break_rate is None:
                 self._mark_status(
                     "market_breadth", ok=False, data_source="eastmoney_index",
@@ -139,6 +143,8 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
                 captured_at=at,
                 total_market_turnover_cny=turnover,
                 limit_break_rate=limit_break_rate,
+                advance_count=advance_count,
+                decline_count=decline_count,
             )
         except Exception as exc:
             self._mark_status("market_breadth", ok=False, data_source="eastmoney_index", message=str(exc))

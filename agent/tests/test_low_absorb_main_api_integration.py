@@ -13,3 +13,24 @@ def test_main_fastapi_app_mounts_low_absorb_routes_with_auth(monkeypatch) -> Non
 
     assert response.status_code == 403
     assert response.json()["detail"] == "API_AUTH_KEY is required for non-local API access"
+
+
+def test_all_low_absorb_routes_mounted() -> None:
+    """Verify that all expected Low Absorb routers are registered on the app."""
+    routes = [route.path for route in api_server.app.routes]
+    expected_prefixes = [
+        "/low-absorb/sentiment",
+        "/low-absorb/backtest",
+        "/low-absorb/chain",
+        "/low-absorb/reports",
+        "/low-absorb/settings",
+        "/low-absorb/workbench",
+        "/low-absorb/snapshot",
+        "/low-absorb/scan-tail",
+        "/low-absorb/fills",
+        "/low-absorb/positions",
+        "/low-absorb/supervise",
+    ]
+    for prefix in expected_prefixes:
+        matching = [r for r in routes if r.startswith(prefix)]
+        assert matching, f"Expected route prefix '{prefix}' not found among registered routes"

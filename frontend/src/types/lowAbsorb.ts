@@ -388,7 +388,15 @@ export type LowAbsorbApiRisk = {
   supervision_status?: string;
 };
 
-export type LowAbsorbApiCloseReport = Record<string, unknown>;
+export type LowAbsorbApiCloseReport = {
+  report_id: string;
+  trade_date: string;
+  summary: string;
+  signals: LowAbsorbApiSignal[];
+  trade_plans: LowAbsorbApiTradePlan[];
+  positions: LowAbsorbApiPosition[];
+  review_items: string[];
+};
 
 export type LowAbsorbApiSnapshot = {
   signals: LowAbsorbApiSignal[];

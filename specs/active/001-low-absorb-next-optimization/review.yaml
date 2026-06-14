@@ -1,0 +1,186 @@
+task_id: "001-low-absorb-next-optimization"
+title: "Low Absorb Batch D 提交前复审"
+reviewed_by: "Codex"
+reviewed_at: "2026-06-14"
+review_type: "pre_commit_recheck"
+
+verdict: "APPROVED_FOR_COMMIT"
+
+scope_note: >
+  本轮复审重点核对上一轮 Codex 阻断项 H1/H2/M1 是否修复，并复跑提交前门禁：
+  后端 Low Absorb 测试、前端测试、前端构建、diff 检查和金融安全扫描。Codex
+  未修改源码，未执行 commit、push 或 PR 操作。
+
+inputs_reviewed:
+  claude_rules: true
+  agents_rules: true
+  contract_yaml: true
+  tasks_md: true
+  implementation_yaml: true
+  delivery_yaml: true
+  git_status: true
+  targeted_git_diff: true
+  validation_logs: true
+  page_evidence_from_delivery: true
+  ci_results: false
+
+checks:
+  prior_H1_sentiment_fail_closed: "passed"
+  prior_H2_frontend_safe_fallback: "passed"
+  prior_M1_page_validation_evidence: "passed"
+  backend_tests: "passed"
+  frontend_tests: "passed"
+  frontend_build: "passed"
+  diff_check: "passed"
+  financial_safety: "passed"
+  ready_for_commit: "passed"
+
+summary: >
+  复审通过，可以进入提交阶段。上一轮 H1 已修复：A 股 market breadth 缺失且全球风险
+  正常时，后端现在返回“拦截”并给出“A 股行情数据不可用”原因，不再 fail-open。
+  H2 已修复：Sentiment.tsx API fallback 改为“观察”和数据缺失展示，不再默认显示“允许”。
+  M1 已补充页面验证证据。所有必需测试与构建均通过，未发现券商执行、自动交易或禁用
+  按钮文案风险。
+
+resolved_findings:
+  - id: "H1"
+    status: "resolved"
+    file: "agent/src/low_absorb/sentiment.py"
+    evidence: >
+      Codex 定向验证：global_risk_appetite=65 且 a_share_turnover_cny /
+      a_share_limit_break_rate 均为 None 时，返回 \u62e6\u622a，blockedReasons
+      包含“A 股行情数据不可用，无法判断市场宽度闸门”。
+  - id: "H2"
+    status: "resolved"
+    file: "frontend/src/pages/low-absorb/Sentiment.tsx"
+    evidence: >
+      FALLBACK_SENTIMENT.tradingPermission.status 已改为“观察”，blockedReasons
+      包含“情绪 API 不可用，暂停生成新建议”；各闸门 fallback 显示“数据缺失”。
+  - id: "M1"
+    status: "resolved"
+    file: "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+    evidence: >
+      delivery.yaml 记录 /low-absorb/sentiment、/low-absorb/backtest、
+      /low-absorb/reports 页面验证通过。
+
+findings:
+  critical: []
+  high: []
+  medium: []
+  low:
+    - id: "L1"
+      severity: "P3"
+      status: "open_non_blocking"
+      file: "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+      issue: >
+        delivery.yaml 的 unresolved_items 仍保留“页面验证待用户手动确认”，但同一文件
+        page_validation 已记录相关页面 passed。该项是文档残留，不影响提交门禁。
+      recommendation: "后续可顺手清理该 unresolved_items，保持交付文件完全一致。"
+    - id: "L2"
+      severity: "P3"
+      status: "open_non_blocking"
+      file: "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+      issue: >
+        delivery.yaml summary 提到 BacktestMetricCards.tsx 防御性数组校验，但
+        files_recommended_for_staging 未列出该文件。Codex 已在 approved_for_commit.allowed_files
+        中补齐，提交时必须精确暂存。
+      recommendation: "提交时按本 review.yaml 的 allowed_files 执行，不要直接照搬 delivery.yaml。"
+
+validation_evidence:
+  commands:
+    - command: "sentiment missing A-share targeted check"
+      status: "passed"
+      output_summary: "A 股数据缺失 + 全球风险分数 65 时返回 \\u62e6\\u622a，blockedReasons 包含 A 股行情数据不可用。"
+    - command: "git diff --check"
+      status: "passed"
+      output_summary: "退出码 0；仅 LF/CRLF 工作区转换提示。"
+    - command: "rg forbidden low-absorb labels"
+      status: "passed"
+      output_summary: "退出码 1 且无输出，表示未匹配独立禁用按钮文案、BrokerOrder、PENDING order、券商交易执行 API、自动委托等风险词。"
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+      status: "passed"
+      output_summary: "167 passed, 1 skipped, 3079 deselected, 3 warnings in 34.62s。"
+    - command: "cd frontend && npm.cmd run test:run"
+      status: "passed"
+      output_summary: "26 test files passed, 226 tests passed。"
+    - command: "cd frontend && npm.cmd run build"
+      status: "passed"
+      output_summary: "tsc -b && vite build 通过；仅 vendor chunk size warning。"
+
+financial_safety:
+  status: "passed"
+  no_broker_execution: true
+  no_auto_trading: true
+  no_broker_api: true
+  no_forbidden_button_labels: true
+  notes:
+    - "未发现真实券商下单、自动买卖、自动委托或券商交易执行 API。"
+    - "禁用按钮文案扫描未匹配独立执行按钮：买入、卖出、下单、自动交易。"
+    - "情绪缺失数据路径已改为拦截或观察，不再误导为允许。"
+
+scope_and_staging:
+  status: "passed_with_precision_required"
+  notes:
+    - "frontend/src/lib/lowAbsorbApi.ts 属于 Low Absorb API 客户端适配，虽未在最初 implementation.yaml 文件清单中列出，但改动范围很小，且用于 T10 报告通知 report_id 参数，Codex 本次复审接受该范围补充。"
+    - "frontend/src/components/low-absorb/backtest/BacktestMetricCards.tsx 为页面运行时防御性修复，位于 Low Absorb 专用组件目录，Codex 本次复审接受。"
+    - "工作区仍存在大量未跟踪本地文件和历史文档，提交阶段必须精确暂存，禁止 git add . / git add -A。"
+
+approved_for_commit:
+  status: true
+  allowed_files:
+    - "agent/src/low_absorb/a_stock_provider.py"
+    - "agent/src/low_absorb/api/backtest.py"
+    - "agent/src/low_absorb/api/reports.py"
+    - "agent/src/low_absorb/api/sentiment.py"
+    - "agent/src/low_absorb/data_provider.py"
+    - "agent/src/low_absorb/report.py"
+    - "agent/src/low_absorb/sentiment.py"
+    - "agent/tests/test_low_absorb_api_contract.py"
+    - "agent/tests/test_low_absorb_backtest.py"
+    - "agent/tests/test_low_absorb_main_api_integration.py"
+    - "agent/tests/test_low_absorb_reports.py"
+    - "agent/tests/test_low_absorb_sentiment.py"
+    - "agent/tests/test_low_absorb_storage.py"
+    - "agent/tests/test_low_absorb_workflow.py"
+    - "frontend/src/components/low-absorb/backtest/BacktestMetricCards.tsx"
+    - "frontend/src/components/low-absorb/backtest/BacktestOverview.tsx"
+    - "frontend/src/lib/lowAbsorbApi.ts"
+    - "frontend/src/pages/low-absorb/Backtest.tsx"
+    - "frontend/src/pages/low-absorb/Reports.tsx"
+    - "frontend/src/pages/low-absorb/Sentiment.tsx"
+    - "frontend/src/pages/low-absorb/__tests__/LowAbsorbPages.test.tsx"
+    - "frontend/src/pages/low-absorb/__tests__/Stage9Pages.test.tsx"
+    - "frontend/src/types/lowAbsorb.ts"
+    - "specs/active/001-low-absorb-next-optimization/brief.md"
+    - "specs/active/001-low-absorb-next-optimization/contract.yaml"
+    - "specs/active/001-low-absorb-next-optimization/delivery.yaml"
+    - "specs/active/001-low-absorb-next-optimization/implementation.yaml"
+    - "specs/active/001-low-absorb-next-optimization/review.yaml"
+  commit_message: "feat(low-absorb): complete Batch D workflow and review fixes"
+
+git_safety:
+  user_authorization_required: true
+  only_stage_allowed_files: true
+  must_not_stage:
+    - ".codex/**"
+    - ".playwright-mcp/**"
+    - ".pr3-review-worktree/**"
+    - "AGENT.md"
+    - "co.sh"
+    - "low_absorb_codex_stage6_10_execution_plan.md"
+    - "specs/constitution.md"
+    - "specs/templates/**"
+    - "specs/active/001-low-absorb-next-optimization/delivery.md"
+    - "specs/active/001-low-absorb-next-optimization/implementation-brief.md"
+    - "specs/active/001-low-absorb-next-optimization/tasks.md"
+  forbidden_commands:
+    - "git add ."
+    - "git add -A"
+    - "git commit -am"
+  required_before_commit:
+    - "用户明确授权 Claude Code CLI 执行版本操作。"
+    - "只暂存 approved_for_commit.allowed_files。"
+    - "运行 git diff --cached --name-only，确认没有 must_not_stage 文件。"
+  note: >
+    可以进入提交阶段，但仍必须等待用户授权。Claude Code CLI 必须精确暂存 allowed_files，
+    不得暂存本地工具目录、旧交付文档、模板目录或任务文档残留改动。

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { BacktestMetricCards } from "@/components/low-absorb/backtest/BacktestMetricCards";
 import { BacktestOverview } from "@/components/low-absorb/backtest/BacktestOverview";
@@ -8,14 +8,28 @@ import { HistoricalSignalTable } from "@/components/low-absorb/backtest/Historic
 import { ImprovementSuggestions } from "@/components/low-absorb/backtest/ImprovementSuggestions";
 import { SensitivityMatrix } from "@/components/low-absorb/backtest/SensitivityMatrix";
 import { cn } from "@/lib/utils";
+import { lowAbsorbApi } from "@/lib/lowAbsorbApi";
 import { LOW_ABSORB_BACKTEST_MOCK } from "@/mocks/lowAbsorb";
+import type { LowAbsorbBacktestMock } from "@/types/lowAbsorb";
 import { LowAbsorbPageShell } from "./shared";
 
 const TABS = ["回测总览", "策略参数", "历史信号", "参数敏感性", "分支归因", "改进建议"] as const;
 type BacktestTab = (typeof TABS)[number];
 
+const FALLBACK_BACKTEST: LowAbsorbBacktestMock = LOW_ABSORB_BACKTEST_MOCK;
+
 export function Backtest() {
   const [activeTab, setActiveTab] = useState<BacktestTab>("回测总览");
+  const [data, setData] = useState<LowAbsorbBacktestMock>(FALLBACK_BACKTEST);
+
+  useEffect(() => {
+    lowAbsorbApi
+      .getBacktestSummary()
+      .then((res) => setData(res as unknown as LowAbsorbBacktestMock))
+      .catch(() => {
+        /* silently keep mock fallback */
+      });
+  }, []);
 
   return (
     <LowAbsorbPageShell
@@ -42,24 +56,24 @@ export function Backtest() {
 
       {activeTab === "回测总览" && (
         <>
-          <BacktestOverview />
-          <BacktestMetricCards metrics={LOW_ABSORB_BACKTEST_MOCK.metrics} />
+          <BacktestOverview metrics={data.metrics} />
+          <BacktestMetricCards metrics={data.metrics} />
         </>
       )}
       {activeTab === "策略参数" && (
-        <BacktestParameterPanel parameters={LOW_ABSORB_BACKTEST_MOCK.parameters} />
+        <BacktestParameterPanel parameters={data.parameters} />
       )}
       {activeTab === "历史信号" && (
-        <HistoricalSignalTable rows={LOW_ABSORB_BACKTEST_MOCK.historicalSignals} />
+        <HistoricalSignalTable rows={data.historicalSignals} />
       )}
       {activeTab === "参数敏感性" && (
-        <SensitivityMatrix rows={LOW_ABSORB_BACKTEST_MOCK.sensitivity} />
+        <SensitivityMatrix rows={data.sensitivity} />
       )}
       {activeTab === "分支归因" && (
-        <BranchAttributionPanel rows={LOW_ABSORB_BACKTEST_MOCK.branchAttribution} />
+        <BranchAttributionPanel rows={data.branchAttribution} />
       )}
       {activeTab === "改进建议" && (
-        <ImprovementSuggestions suggestions={LOW_ABSORB_BACKTEST_MOCK.suggestions} />
+        <ImprovementSuggestions suggestions={data.suggestions} />
       )}
     </LowAbsorbPageShell>
   );

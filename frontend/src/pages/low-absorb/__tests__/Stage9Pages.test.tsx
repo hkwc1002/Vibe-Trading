@@ -21,6 +21,14 @@ describe("Low Absorb Stage 9 pages", () => {
     expect(screen.getByText("情绪结论")).toBeInTheDocument();
     expect(screen.getByText("社交事件流")).toBeInTheDocument();
     expect(screen.getByText("新闻事件流")).toBeInTheDocument();
+
+    // Fallback data (API fail) shows 观察 with yellow indicator, never 允许
+    const observeElements = screen.getAllByText("观察");
+    expect(observeElements.length).toBeGreaterThanOrEqual(1);
+    // First matching element should have the yellow permission badge class
+    expect(observeElements[0].className).toContain("yellow");
+    // No 允许 badge should exist in fallback mode
+    expect(screen.queryByText("允许")).not.toBeInTheDocument();
   });
 
   it("renders AI Chain cost overview and sector navigation", async () => {

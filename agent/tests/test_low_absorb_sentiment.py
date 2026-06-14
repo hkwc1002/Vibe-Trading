@@ -122,6 +122,79 @@ def test_instrument_panels_have_all_six_gates() -> None:
     assert ids == expected
 
 
+def test_each_instrument_panel_has_required_fields() -> None:
+    """Every instrument panel has id, label, value, status, explanation."""
+    snapshot = build_sentiment_permission_snapshot()
+    for panel in snapshot["instrumentPanels"]:
+        assert "id" in panel and panel["id"]
+        assert "label" in panel and panel["label"]
+        assert "value" in panel
+        assert "status" in panel and panel["status"]
+        assert "explanation" in panel and panel["explanation"]
+
+
+def test_event_streams_always_return_arrays() -> None:
+    """socialEvents and newsEvents are always lists (possibly empty)."""
+    snapshot = build_sentiment_permission_snapshot()
+    assert isinstance(snapshot.get("socialEvents", None), list)
+    assert isinstance(snapshot.get("newsEvents", None), list)
+
+
+def test_advance_decline_shows_real_data_when_provided() -> None:
+    """When advance/decline counts are supplied, the gate shows them."""
+    snapshot = build_sentiment_permission_snapshot(
+        a_share_advance_count=2800,
+        a_share_decline_count=1200,
+    )
+    panel = next(p for p in snapshot["instrumentPanels"] if p["id"] == "advance_decline")
+    assert "2800" in str(panel["value"])
+    assert "1200" in str(panel["value"])
+
+
+def test_advance_decline_shows_dash_when_no_data() -> None:
+    """When advance/decline counts are not supplied, the gate shows '—'."""
+    snapshot = build_sentiment_permission_snapshot()
+    panel = next(p for p in snapshot["instrumentPanels"] if p["id"] == "advance_decline")
+    assert panel["value"] == "—"
+
+
+def test_a_share_data_missing_global_provided_does_not_return_allowed() -> None:
+    """H1: A-share data missing + global provided must NOT return 允许."""
+    snapshot = build_sentiment_permission_snapshot(
+        global_risk_appetite=Decimal("65"),
+        a_share_turnover_cny=None,
+        a_share_limit_break_rate=None,
+    )
+    perm = snapshot["tradingPermission"]
+    status = str(perm["status"])
+    assert "允许" not in status, f"H1 violated: returned {status}"
+    assert any("A 股" in r for r in perm["blockedReasons"]), "block reason should mention A 股"
+
+
+def test_a_share_data_missing_panels_show_data_missing() -> None:
+    """H1: When A-share data is missing, gate panels show 数据缺失."""
+    snapshot = build_sentiment_permission_snapshot(
+        global_risk_appetite=Decimal("65"),
+        a_share_turnover_cny=None,
+        a_share_limit_break_rate=None,
+    )
+    turnover_panel = next(p for p in snapshot["instrumentPanels"] if p["id"] == "market_turnover")
+    assert turnover_panel["status"] == "数据缺失"
+    limit_break_panel = next(p for p in snapshot["instrumentPanels"] if p["id"] == "limit_break")
+    assert limit_break_panel["status"] == "数据缺失"
+
+
+def test_a_share_data_normal_with_global_permitted() -> None:
+    """H1 regression: A-share + global both OK returns 允许."""
+    snapshot = build_sentiment_permission_snapshot(
+        global_risk_appetite=Decimal("65"),
+        a_share_turnover_cny=Decimal("800000000000"),
+        a_share_limit_break_rate=Decimal("0.15"),
+    )
+    perm = snapshot["tradingPermission"]
+    assert "允许" in str(perm["status"])
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # H3: compute_global_risk_appetite unit tests
 # ──────────────────────────────────────────────────────────────────────────────
