@@ -19,8 +19,8 @@ describe("Layout AI Low Absorb navigation", () => {
       </MemoryRouter>,
     );
 
-    const group = screen.getByLabelText("AI Low Absorb navigation");
-    expect(within(group).getByText("AI Low Absorb")).toBeInTheDocument();
+    const group = screen.getByLabelText("AI 主板低吸导航");
+    expect(within(group).getByText("AI 主板低吸")).toBeInTheDocument();
 
     const expectedLinks = [
       ["交易工作台", "/low-absorb"],
@@ -37,4 +37,3 @@ describe("Layout AI Low Absorb navigation", () => {
     }
   });
 });
-

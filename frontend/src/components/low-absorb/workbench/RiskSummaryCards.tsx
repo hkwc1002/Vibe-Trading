@@ -36,9 +36,26 @@ export function RiskSummaryCards({ cards }: { cards: LowAbsorbDashboardCard[] })
             <RiskBadge level={card.riskLevel} />
           </div>
           <p className="mt-3 text-xs leading-5 text-muted-foreground">{card.detail}</p>
+          <dl className="mt-4 grid gap-2 text-xs">
+            <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+              <dt className="text-muted-foreground">当前状态</dt>
+              <dd className="font-medium text-foreground">{card.currentStatus ?? card.value}</dd>
+            </div>
+            <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+              <dt className="text-muted-foreground">关键指标</dt>
+              <dd className="text-foreground">{card.keyMetrics?.join(" / ") ?? card.detail}</dd>
+            </div>
+            <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+              <dt className="text-muted-foreground">趋势变化</dt>
+              <dd className="text-foreground">{card.trend ?? "等待下一次刷新"}</dd>
+            </div>
+            <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+              <dt className="text-muted-foreground">下一步</dt>
+              <dd className="font-medium text-foreground">{card.nextAction ?? "人工复核"}</dd>
+            </div>
+          </dl>
         </article>
       ))}
     </section>
   );
 }
-

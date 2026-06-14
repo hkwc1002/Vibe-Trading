@@ -19,7 +19,7 @@ export function LowAbsorbPageShell({ title, description, children }: LowAbsorbPa
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <header className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-            AI Low Absorb
+            AI 主板低吸
           </p>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             {title}
@@ -66,4 +66,3 @@ export function EmptyContentArea({ title = "暂无业务数据接入" }: { title
     </section>
   );
 }
-

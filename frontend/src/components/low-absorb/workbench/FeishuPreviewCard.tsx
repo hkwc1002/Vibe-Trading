@@ -21,4 +21,3 @@ export function FeishuPreviewCard({ preview }: { preview: LowAbsorbFeishuPreview
     </section>
   );
 }
-

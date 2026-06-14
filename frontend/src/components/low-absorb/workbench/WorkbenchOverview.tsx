@@ -3,6 +3,8 @@ import { RiskBadge, RiskSummaryCards } from "./RiskSummaryCards";
 
 export function WorkbenchOverview({ data }: { data: LowAbsorbWorkbenchMock }) {
   const candidates = data.signals.filter((signal) => signal.status !== "已拦截").slice(0, 2);
+  const highRiskPositions = data.positions.filter((position) => position.riskLevel !== "normal");
+  const riskRows = highRiskPositions.length ? highRiskPositions : data.positions;
 
   return (
     <div className="space-y-5">
@@ -10,7 +12,9 @@ export function WorkbenchOverview({ data }: { data: LowAbsorbWorkbenchMock }) {
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr_1fr]">
         <section className="rounded-lg border bg-card p-4">
-          <h2 className="text-base font-semibold text-foreground">今日待处理事项</h2>
+          <h2 className="text-base font-semibold text-foreground">优先任务队列</h2>
+          <h3 className="sr-only">今日待处理事项</h3>
+          <p className="mt-1 text-xs text-muted-foreground">今日待处理事项按人工执行顺序排列。</p>
           <div className="mt-3 space-y-3">
             {data.tasks.map((task) => (
               <div key={task.id} className="rounded-md border bg-background p-3">
@@ -40,15 +44,22 @@ export function WorkbenchOverview({ data }: { data: LowAbsorbWorkbenchMock }) {
                   <RiskBadge level={signal.riskLevel} label={signal.grade} />
                 </div>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">{signal.reason}</p>
+                {signal.chainExplanation && (
+                  <p className="mt-2 rounded-md bg-muted px-2 py-1 text-xs leading-5 text-muted-foreground">
+                    {signal.chainExplanation}
+                  </p>
+                )}
               </div>
             ))}
           </div>
         </section>
 
         <section className="rounded-lg border bg-card p-4">
-          <h2 className="text-base font-semibold text-foreground">持仓风险摘要</h2>
+          <h2 className="text-base font-semibold text-foreground">高风险持仓</h2>
+          <h3 className="sr-only">持仓风险摘要</h3>
+          <p className="mt-1 text-xs text-muted-foreground">持仓风险摘要</p>
           <div className="mt-3 space-y-3">
-            {data.positions.map((position) => (
+            {riskRows.map((position) => (
               <div key={position.id} className="rounded-md border bg-background p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -66,4 +77,3 @@ export function WorkbenchOverview({ data }: { data: LowAbsorbWorkbenchMock }) {
     </div>
   );
 }
-
