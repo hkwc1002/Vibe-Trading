@@ -6,7 +6,14 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from .chain_matrix import chain_branch_allows_stock
+from .chain_matrix import (
+    branch_strength_for_sector,
+    chain_branch_allows_stock,
+    chain_explanation_for_sector,
+    chain_priority_score,
+    cost_signal_weight_for_sector,
+    normalize_chain_sector,
+)
 from .config import LowAbsorbConfig
 from .data_provider import DailyBar, MarketDataProvider
 from .models import LowAbsorbSignal, ManualTradePlan, SignalStatus
@@ -87,8 +94,7 @@ class LowAbsorbScanner:
 
         bars_by_symbol = self._data_provider.get_daily_bars(mainboard_symbols, trade_date, 20)
         branch_strength = self._data_provider.get_chain_branch_strength(trade_date, lookback=20)
-        signals: list[LowAbsorbSignal] = []
-        plans: list[ManualTradePlan] = []
+        candidates: list[tuple[LowAbsorbSignal, DailyBar]] = []
         for symbol in mainboard_symbols:
             bars = bars_by_symbol.get(symbol) or []
             if len(bars) < 20:
@@ -113,24 +119,45 @@ class LowAbsorbScanner:
             if lower_shadow_atr < self._config.min_lower_shadow_atr:
                 continue
 
+            normalized_sector = normalize_chain_sector(latest.industry)
+            branch_strength_value = branch_strength_for_sector(normalized_sector, branch_strength)
+            cost_weight = cost_signal_weight_for_sector(normalized_sector, self._config)
+            priority_score = chain_priority_score(
+                sector=normalized_sector,
+                branches=branch_strength,
+                config=self._config,
+            )
+            chain_explanation = chain_explanation_for_sector(
+                sector=normalized_sector,
+                branches=branch_strength,
+                config=self._config,
+            )
             signal = LowAbsorbSignal(
                 signal_id=f"sig-{latest.symbol}-{trade_date:%Y%m%d}",
                 trade_date=trade_date,
                 stock_code=latest.symbol,
                 stock_name=latest.stock_name,
-                branch_name=latest.industry,
+                branch_name=normalized_sector,
                 grade="A",
                 ma20_deviation_pct=ma20_deviation,
                 volume_ratio=volume_ratio,
                 lower_shadow_atr=lower_shadow_atr,
                 reason=(
                     f"MA20 偏离 {ma20_deviation:.2%}，5日量比 {volume_ratio:.2f}，"
-                    f"下影线 {lower_shadow_atr:.2f} ATR，产业链分支未触发弱分支拦截。"
+                    f"下影线 {lower_shadow_atr:.2f} ATR，产业链分支未触发弱分支拦截；"
+                    f"AI Chain 优先级 {priority_score:.2f}。"
                 ),
                 status=SignalStatus.CANDIDATE,
+                chain_explanation=chain_explanation,
+                branch_strength=branch_strength_value,
+                cost_signal_weight=cost_weight,
+                priority_score=priority_score,
+                sector_role="mainboard_mapping",
             )
-            signals.append(signal)
-            plans.append(self._build_plan(signal, latest, trade_date))
+            candidates.append((signal, latest))
+        candidates.sort(key=lambda item: item[0].priority_score, reverse=True)
+        signals = [signal for signal, _ in candidates]
+        plans = [self._build_plan(signal, latest, trade_date) for signal, latest in candidates]
         return ScanTailResult(signals=signals, trade_plans=plans)
 
     def _bar_is_stale(self, bar: DailyBar, at: datetime) -> bool:
@@ -157,11 +184,16 @@ class LowAbsorbScanner:
 
     def _build_plan(self, signal: LowAbsorbSignal, latest: DailyBar, trade_date: date) -> ManualTradePlan:
         intraday = self._data_provider.get_intraday_bars(latest.symbol, trade_date, interval="1m")
-        entry_low = min((bar.low for bar in intraday), default=latest.low)
+        fallback_entry_low = latest.low + ((latest.close - latest.low) * Decimal("0.25"))
+        entry_low = min((bar.low for bar in intraday), default=fallback_entry_low)
         entry_high = latest.close
         stop_loss = latest.low
+        if entry_low <= stop_loss:
+            entry_low = fallback_entry_low
+        if stop_loss >= entry_low:
+            entry_low = stop_loss + Decimal("0.01")
         risk_per_standard_lot = calculate_open_stop_risk_cny(entry_price=entry_high, stop_loss=stop_loss)
-        rationale = f"生成依据：{signal.reason}"
+        rationale = f"生成依据：{signal.reason} {signal.chain_explanation}"
 
         return create_manual_trade_plan(
             signal=signal,
@@ -175,4 +207,11 @@ class LowAbsorbScanner:
             open_stop_risk_cny=risk_per_standard_lot,
             r_multiple=Decimal("0"),
             rationale=rationale,
+            chain_explanation=signal.chain_explanation,
+            branch_strength=signal.branch_strength,
+            cost_signal_weight=signal.cost_signal_weight,
+            priority_score=signal.priority_score,
+            downgrade_reason=signal.downgrade_reason,
+            block_reason=signal.block_reason,
+            sector_role=signal.sector_role,
         )
