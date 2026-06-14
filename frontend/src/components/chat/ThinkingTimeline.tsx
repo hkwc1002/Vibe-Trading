@@ -13,7 +13,7 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
   const [expanded, setExpanded] = useState(isLatest);
 
   const toolLabel = (tool?: string): string => {
-    if (!tool) return "Processing";
+    if (!tool) return "处理中";
     return localizeToolName(tool);
   };
 
@@ -56,8 +56,8 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
   const stepCount = steps.length;
   const summaryText = isRunning
-    ? `Running ${toolLabel(latestTool)}...`
-    : `Done · ${stepCount} steps${totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}s` : ""}`;
+    ? `正在运行 ${toolLabel(latestTool)}...`
+    : `完成 · ${stepCount} 步${totalMs > 0 ? ` · ${(totalMs / 1000).toFixed(1)}秒` : ""}`;
 
   return (
     <div className="rounded-lg border border-border/40 bg-muted/5 overflow-hidden">
@@ -119,9 +119,9 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
 
               {/* Duration or status */}
               {step.status === "running" ? (
-                <span className="text-[10px] text-primary/60">Running</span>
+                <span className="text-[10px] text-primary/60">运行中</span>
               ) : step.elapsed_ms != null ? (
-                <span className="text-[10px] text-muted-foreground/40 tabular-nums">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
+                <span className="text-[10px] text-muted-foreground/40 tabular-nums">{(step.elapsed_ms / 1000).toFixed(1)}秒</span>
               ) : null}
             </div>
           ))}

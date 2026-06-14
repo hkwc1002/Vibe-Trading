@@ -80,8 +80,8 @@ function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", e
 
   const localized = localizeToolName(entry.tool);
   const stepLabel = isHeader
-    ? `${totalSteps} tools running`
-    : `Step ${stepIndex} · ${localized}`;
+    ? `${totalSteps} 个工具运行中`
+    : `步骤 ${stepIndex} · ${localized}`;
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-x-2 gap-y-0.5 text-xs min-w-0">
@@ -96,7 +96,7 @@ function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", e
         <span className="text-foreground truncate">{stepLabel}</span>
         {entry.elapsed_s != null && (
           <span className="ml-auto sm:ml-0 tabular-nums text-[10px] text-muted-foreground/70 shrink-0">
-            {entry.elapsed_s.toFixed(0)}s
+            {entry.elapsed_s.toFixed(0)}秒
           </span>
         )}
       </div>
@@ -118,7 +118,7 @@ function ToolRow({ entry, stepIndex, totalSteps, isHeader, connector = "none", e
           )}
           {eta != null && (
             <span className="text-[10px] text-muted-foreground/70 tabular-nums shrink-0">
-              ~{eta}s left
+              约剩 {eta} 秒
             </span>
           )}
         </div>
@@ -229,7 +229,7 @@ export function ToolProgressIndicator({ toolCalls }: Props): JSX.Element | null 
       {/* Header row */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {aggregateIcon}
-        <span className="text-foreground">{running.length} tools running</span>
+        <span className="text-foreground">{running.length} 个工具运行中</span>
       </div>
       {/* Indented rows */}
       <div className="pl-4 space-y-1">
@@ -246,7 +246,7 @@ export function ToolProgressIndicator({ toolCalls }: Props): JSX.Element | null 
         {overflow > 0 && (
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
             <span className="text-border/60 shrink-0 w-3 text-center" aria-hidden="true">└</span>
-            <span>… +{overflow} more</span>
+            <span>… 另有 {overflow} 个</span>
           </div>
         )}
       </div>

@@ -27,10 +27,10 @@ function formatUsd(value: number): string {
 
 function formatLeverage(leverage: MandateProfile["leverage"]): string {
   if (typeof leverage === "number") {
-    return leverage <= 1 ? "no leverage" : `${leverage}× leverage`;
+    return leverage <= 1 ? "不使用杠杆" : `${leverage}× 杠杆`;
   }
   const lowered = leverage.toLowerCase();
-  return lowered === "none" || lowered === "" ? "no leverage" : leverage;
+  return lowered === "none" || lowered === "" ? "不使用杠杆" : leverage;
 }
 
 function formatUniverse(universe: MandateProfile["universe"]): string {
@@ -89,32 +89,32 @@ function ProfileTile({
           onClick={onAdjustToggle}
           disabled={disabled}
           className="inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          title="Adjust this mandate"
+          title="调整此授权任务"
         >
           <SlidersHorizontal className="h-3 w-3" />
-          Adjust
+          调整
         </button>
       </div>
 
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
         <div className="col-span-2">
-          <dt className="text-muted-foreground">Universe</dt>
+          <dt className="text-muted-foreground">标的池</dt>
           <dd className="font-medium text-foreground">{formatUniverse(profile.universe)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Max order</dt>
+          <dt className="text-muted-foreground">单笔上限</dt>
           <dd className="font-mono font-medium text-foreground">{formatUsd(profile.max_order_usd)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Daily cap</dt>
-          <dd className="font-mono font-medium text-foreground">{profile.daily_trade_cap} trades/day</dd>
+          <dt className="text-muted-foreground">日内上限</dt>
+          <dd className="font-mono font-medium text-foreground">{profile.daily_trade_cap} 次/日</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Leverage</dt>
+          <dt className="text-muted-foreground">杠杆</dt>
           <dd className="font-medium text-foreground">{formatLeverage(profile.leverage)}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Instruments</dt>
+          <dt className="text-muted-foreground">工具品种</dt>
           <dd className="font-medium text-foreground">{profile.instruments.join(", ") || "—"}</dd>
         </div>
       </dl>
@@ -138,7 +138,7 @@ function ProfileTile({
                 onAdjustCancel();
               }
             }}
-            placeholder="e.g. keep this but raise the daily cap to 10"
+            placeholder="例如：保留该方案，但将日内上限提高到 10 次"
             className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex justify-end gap-2">
@@ -148,7 +148,7 @@ function ProfileTile({
               className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <X className="h-3 w-3" />
-              Cancel
+              取消
             </button>
             <button
               type="button"
@@ -157,7 +157,7 @@ function ProfileTile({
               className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-40"
             >
               <Check className="h-3 w-3" />
-              Send adjustment
+              发送调整意见
             </button>
           </div>
         </div>
@@ -169,7 +169,7 @@ function ProfileTile({
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-          {busy ? "Committing…" : `Commit “${profile.label}”`}
+          {busy ? "正在提交…" : `提交“${profile.label}”`}
         </button>
       )}
     </div>
@@ -193,7 +193,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
       if (busyOrdinal != null) return;
       const broker = proposal.account?.broker?.trim().toLowerCase();
       if (!broker) {
-        toast.error("Cannot commit mandate: connector broker is missing. Ask the agent to regenerate the proposal.");
+        toast.error("无法提交授权任务：缺少连接器券商信息。请让智能体重新生成建议。");
         return;
       }
       setBusyOrdinal(ordinal);
@@ -210,7 +210,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
         // SSE event arrives; no optimistic state-write here.
       } catch (error) {
         setBusyOrdinal(null);
-        toast.error(error instanceof Error ? error.message : "Failed to commit mandate.");
+        toast.error(error instanceof Error ? error.message : "授权任务提交失败。");
       }
     },
     [busyOrdinal, proposal.account?.broker, proposal.proposal_id, proposal.session_id],
@@ -229,15 +229,15 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <ShieldCheck className="h-3 w-3 shrink-0" />
             <span className="shrink-0">
-              Mandate {committed.selected_ordinal != null ? `#${committed.selected_ordinal} ` : ""}active
+              授权任务 {committed.selected_ordinal != null ? `#${committed.selected_ordinal} ` : ""}已生效
             </span>
             {maxOrder != null && (
-              <span className="shrink-0 font-mono text-[11px]">· ≤{formatUsd(maxOrder)}/order</span>
+              <span className="shrink-0 font-mono text-[11px]">· 单笔≤{formatUsd(maxOrder)}</span>
             )}
-            {dailyCap != null && <span className="shrink-0 font-mono text-[11px]">· {dailyCap}/day</span>}
+            {dailyCap != null && <span className="shrink-0 font-mono text-[11px]">· {dailyCap} 次/日</span>}
             {expires && (
               <span className="shrink-0 text-[10px] text-muted-foreground">
-                · expires {expires.toLocaleDateString()}
+                · 到期 {expires.toLocaleDateString()}
               </span>
             )}
           </span>
@@ -260,14 +260,14 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           )}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground">
-              {isReauth ? "Re-authorize connector mandate" : "Connector runtime mandate"}
+              {isReauth ? "重新授权连接器任务" : "连接器运行时授权任务"}
             </p>
             {proposal.intent_normalized && (
               <p className="text-xs text-muted-foreground">{proposal.intent_normalized}</p>
             )}
             {proposal.account && (
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {proposal.account.broker} · {proposal.account.type} account · funded by {proposal.account.funded_by}
+                {proposal.account.broker} · {proposal.account.type} 账户 · 资金来源 {proposal.account.funded_by}
               </p>
             )}
           </div>
@@ -289,7 +289,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
               onAdjustCancel={() => setAdjustingOrdinal(null)}
               onAdjustSubmit={(text) => {
                 setAdjustingOrdinal(null);
-                onAdjust(`For mandate proposal "${profile.label}" (option ${profile.ordinal}): ${text}`);
+                onAdjust(`针对授权任务建议“${profile.label}”（选项 ${profile.ordinal}）：${text}`);
               }}
             />
           ))}
