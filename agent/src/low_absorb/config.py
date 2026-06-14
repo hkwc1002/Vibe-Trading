@@ -4,8 +4,21 @@ from __future__ import annotations
 
 from datetime import time
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+def _default_chain_cost_signal_weights() -> dict[str, Decimal]:
+    return {
+        "GPU/加速卡": Decimal("0.90"),
+        "HBM/存储": Decimal("0.86"),
+        "CPO/光模块": Decimal("0.82"),
+        "PCB/高速板": Decimal("0.74"),
+        "服务器ODM": Decimal("0.70"),
+        "液冷散热": Decimal("0.66"),
+        "电源连接器": Decimal("0.62"),
+    }
 
 
 class LowAbsorbConfig(BaseModel):
@@ -32,6 +45,12 @@ class LowAbsorbConfig(BaseModel):
     max_single_position_pct: Decimal = Field(default=Decimal("0.12"), gt=0, le=1)
     max_single_trade_risk_pct: Decimal = Field(default=Decimal("0.005"), gt=0, le=1)
     feishu_idempotency_ttl_seconds: int = Field(default=86_400, gt=0)
+    active_cost_chain_version: str = "GB300 NVL72"
+    chain_cost_signal_weights: dict[str, Decimal] = Field(default_factory=_default_chain_cost_signal_weights)
+    data_provider_mode: Literal["auto", "real", "fixture"] = "auto"
+    enable_fixture_fallback: bool = True
+    global_market_provider: Literal["auto", "yfinance", "stooq"] = "auto"
+    eastmoney_min_interval_seconds: Decimal = Field(default=Decimal("1.0"), gt=0)
 
     @model_validator(mode="after")
     def validate_threshold_order(self) -> "LowAbsorbConfig":

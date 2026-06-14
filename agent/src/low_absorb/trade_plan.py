@@ -22,6 +22,13 @@ def create_manual_trade_plan(
     open_stop_risk_cny: Decimal = Decimal("0"),
     r_multiple: Decimal = Decimal("0"),
     rationale: str = "",
+    chain_explanation: str = "",
+    branch_strength: Decimal = Decimal("0"),
+    cost_signal_weight: Decimal = Decimal("0"),
+    priority_score: Decimal = Decimal("0"),
+    downgrade_reason: str = "",
+    block_reason: str = "",
+    sector_role: str = "",
 ) -> ManualTradePlan:
     """Create a manual plan object without any execution channel."""
 
@@ -47,4 +54,11 @@ def create_manual_trade_plan(
         rationale=rationale,
         manual_order_text=manual_text,
         status=TradePlanStatus.RECOMMENDED,
+        chain_explanation=chain_explanation,
+        branch_strength=branch_strength,
+        cost_signal_weight=cost_signal_weight,
+        priority_score=priority_score,
+        downgrade_reason=downgrade_reason,
+        block_reason=block_reason,
+        sector_role=sector_role,
     )

@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .config import LowAbsorbConfig
+from .chain_matrix import default_cost_chain_models
 from .models import (
     CloseReport,
+    CostChainModel,
     FeishuNotificationResult,
     LowAbsorbSignal,
     ManualFill,
@@ -56,6 +58,12 @@ class LowAbsorbRepository(Protocol):
     def update_webhook(self, webhook: str | None) -> None:
         """Persist the private Feishu webhook."""
 
+    def get_cost_chain_models(self) -> dict[str, CostChainModel]:
+        """Return versioned NVIDIA AI server cost-chain models."""
+
+    def update_cost_chain_model(self, version: str, components: list[Any]) -> CostChainModel:
+        """Persist an editable cost-chain model version."""
+
 
 class InMemoryLowAbsorbStorage:
     """Minimal in-memory storage useful for tests and API skeletons."""
@@ -69,6 +77,7 @@ class InMemoryLowAbsorbStorage:
         self.reports: dict[str, CloseReport] = {}
         self._config = LowAbsorbConfig()
         self._feishu_webhook: str | None = None
+        self._cost_chain_models: dict[str, CostChainModel] = default_cost_chain_models()
 
     def clear(self) -> None:
         self.signals.clear()
@@ -115,6 +124,40 @@ class InMemoryLowAbsorbStorage:
         self._feishu_webhook = webhook
         self.save()
 
+    def get_cost_chain_models(self) -> dict[str, CostChainModel]:
+        return self._cost_chain_models
+
+    def update_cost_chain_model(self, version: str, components: list[Any]) -> CostChainModel:
+        if version != "custom/manual":
+            raise ValueError("only custom/manual cost-chain model can be updated")
+        current = self._cost_chain_models.get(version)
+        if current is None:
+            current = CostChainModel(version="custom/manual", is_editable=True)
+        if not current.is_editable:
+            raise ValueError("only editable cost-chain models can be updated")
+        parsed = [
+            item if hasattr(item, "model_dump") else item
+            for item in components
+        ]
+        updated = CostChainModel.model_validate(
+            {
+                "version": version,
+                "is_editable": True,
+                "components": [
+                    item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+                    for item in parsed
+                ],
+            }
+        )
+        self._cost_chain_models[version] = updated
+        weights = {
+            component.related_sector: component.signal_weight
+            for component in updated.components
+        }
+        self._config = self._config.model_copy(update={"chain_cost_signal_weights": weights})
+        self.save()
+        return updated
+
 
 class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
     """JSON-backed repository for local/dev Low Absorb state."""
@@ -140,6 +183,9 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
             "settings": {
                 "config": self._config.model_dump(mode="json"),
                 "feishu_webhook": self._feishu_webhook,
+                "cost_chain_models": [
+                    item.model_dump(mode="json") for item in self._cost_chain_models.values()
+                ],
             },
         }
         temp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
@@ -184,3 +230,7 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
             self._config = LowAbsorbConfig.model_validate(config_payload)
         webhook = settings.get("feishu_webhook")
         self._feishu_webhook = webhook if isinstance(webhook, str) and webhook else None
+        cost_models = settings.get("cost_chain_models")
+        if isinstance(cost_models, list):
+            parsed = [CostChainModel.model_validate(row) for row in cost_models]
+            self._cost_chain_models = {item.version: item for item in parsed}

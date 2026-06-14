@@ -106,6 +106,13 @@ class LowAbsorbSignal(StockIdentityModel):
     reason: str = Field(..., min_length=1)
     intercept_reasons: list[str] = Field(default_factory=list)
     status: SignalStatus = SignalStatus.CANDIDATE
+    chain_explanation: str = ""
+    branch_strength: Decimal = Decimal("0")
+    cost_signal_weight: Decimal = Decimal("0")
+    priority_score: Decimal = Decimal("0")
+    downgrade_reason: str = ""
+    block_reason: str = ""
+    sector_role: str = ""
 
 
 class ManualTradePlan(StockIdentityModel):
@@ -125,6 +132,13 @@ class ManualTradePlan(StockIdentityModel):
     manual_order_text: str = Field(..., min_length=1)
     feishu_idempotency_key: str | None = None
     status: TradePlanStatus = TradePlanStatus.RECOMMENDED
+    chain_explanation: str = ""
+    branch_strength: Decimal = Decimal("0")
+    cost_signal_weight: Decimal = Decimal("0")
+    priority_score: Decimal = Decimal("0")
+    downgrade_reason: str = ""
+    block_reason: str = ""
+    sector_role: str = ""
 
     @model_validator(mode="after")
     def validate_price_ladder(self) -> "ManualTradePlan":
@@ -229,6 +243,57 @@ class PositionRisk(StockIdentityModel):
     supervision_status: str = ""
     risk_level: Literal["normal", "watch", "warning", "danger"]
     needs_supervision: bool
+
+
+class CostChainComponent(LowAbsorbBaseModel):
+    component: str = Field(..., min_length=1)
+    cost_weight: Decimal = Field(..., ge=0, le=1)
+    cost_weight_range: list[Decimal] = Field(default_factory=list, max_length=2)
+    cost_increase_vs_previous_generation: Decimal
+    related_sector: str = Field(..., min_length=1)
+    a_share_leaders: list[str] = Field(default_factory=list)
+    tradable_mainboard_mapping: list[str] = Field(default_factory=list)
+    signal_weight: Decimal = Field(..., ge=0, le=1)
+    data_source: str = Field(..., min_length=1)
+    source_type: str = "manual"
+    source_url: str = ""
+    source_title: str = ""
+    confidence: Literal["high", "medium", "low"] = "low"
+    is_estimated: bool = True
+    methodology_note: str = ""
+    as_of: date
+
+
+class CostChainModel(LowAbsorbBaseModel):
+    version: str = Field(..., min_length=1)
+    is_editable: bool = False
+    components: list[CostChainComponent] = Field(default_factory=list)
+
+
+class ChainSectorStock(LowAbsorbBaseModel):
+    role: Literal["leader", "core_middle_cap", "sentiment_stock", "mainboard_mapping", "watch_only"]
+    stock_code: str = Field(..., min_length=1)
+    stock_name: str = Field(..., min_length=1)
+    strength_score: Decimal = Field(..., ge=0, le=100)
+    volume_condition: str = Field(..., min_length=1)
+    low_absorb_suitability: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1)
+    current_recommendation: str = Field(..., min_length=1)
+
+
+class ChainSectorWorkspace(LowAbsorbBaseModel):
+    sector_id: str = Field(..., min_length=1)
+    label: str = Field(..., min_length=1)
+    sector_index: str = Field(..., min_length=1)
+    price_change_pct: Decimal
+    turnover_cny: Decimal = Field(..., ge=0)
+    volume_ratio: Decimal = Field(..., ge=0)
+    rs_strength: Decimal
+    fund_flow_cny: Decimal
+    trend_slope: Decimal
+    limit_up_count: int = Field(..., ge=0)
+    limit_break_count: int = Field(..., ge=0)
+    stocks: list[ChainSectorStock] = Field(default_factory=list, max_length=5)
 
 
 class MorningSupervisionResult(StockIdentityModel):
