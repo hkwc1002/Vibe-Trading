@@ -46,6 +46,52 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
     def _get_json(self, url: str, params: dict[str, object] | None = None) -> dict[str, object]:
         return self.http_client.get_json(url, params)
 
+    def _fetch_limit_break_rate(self) -> Decimal | None:
+        """Fetch live limit-break rate from Eastmoney A-share stock list.
+
+        Returns the ratio of 涨停 (limit-up, ≥9.8%) and 跌停 (limit-down,
+        ≤-9.8%) stocks to the total A-share universe. Uses a single large
+        page request (pz=10000) to cover the full market.
+
+        Returns ``None`` when the endpoint is unavailable, the response is
+        invalid, or ``total <= 0`` — callers must treat ``None`` as
+        fail-closed (no market breadth data available).
+        """
+        try:
+            data = self._get_json(
+                "https://push2.eastmoney.com/api/qt/clist/get",
+                {
+                    "pn": "1",
+                    "pz": "10000",
+                    "po": "1",
+                    "np": "1",
+                    "fltt": "2",
+                    "invt": "2",
+                    "fid": "f3",
+                    "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+                    "fields": "f3",
+                },
+            )
+            rows = data.get("data", {}).get("diff", []) if isinstance(data.get("data"), dict) else []
+            total = data.get("data", {}).get("total", 0) if isinstance(data.get("data"), dict) else 0
+            if total <= 0 or not isinstance(rows, list):
+                return None
+
+            limit_up = 0
+            limit_down = 0
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                pct = _decimal(row.get("f3"))
+                if pct >= Decimal("9.8"):
+                    limit_up += 1
+                elif pct <= Decimal("-9.8"):
+                    limit_down += 1
+
+            return Decimal(str(limit_up + limit_down)) / Decimal(str(total))
+        except Exception:
+            return None
+
     def get_market_breadth(self, trade_date: date, at: datetime) -> MarketBreadth | None:
         try:
             data = self._get_json(
@@ -62,13 +108,20 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
             if turnover <= 0:
                 self._mark_status("market_breadth", ok=False, data_source="eastmoney_index", message="empty turnover")
                 return None
+            limit_break_rate = self._fetch_limit_break_rate()
+            if limit_break_rate is None:
+                self._mark_status(
+                    "market_breadth", ok=False, data_source="eastmoney_index",
+                    message="limit_break_rate unavailable (clist failed or empty)",
+                )
+                return None
             self._mark_status("market_breadth", ok=True, data_source="eastmoney_index", staleness_seconds=0, captured_at=at, market_date=trade_date)
             self._latest_captured["market_breadth"] = at
             return MarketBreadth(
                 trade_date=trade_date,
                 captured_at=at,
                 total_market_turnover_cny=turnover,
-                limit_break_rate=Decimal("0.20"),
+                limit_break_rate=limit_break_rate,
             )
         except Exception as exc:
             self._mark_status("market_breadth", ok=False, data_source="eastmoney_index", message=str(exc))

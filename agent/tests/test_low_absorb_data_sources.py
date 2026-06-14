@@ -121,9 +121,10 @@ def test_a_stock_provider_old_daily_bars_trigger_scanner_fail_closed() -> None:
     provider = AStockLowAbsorbProvider(symbols=["601138"], max_data_staleness=60)
 
     def fake_breadth_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
-        return {
-            "data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}
-        }
+        # Single clist request now returns ALL stocks in one response
+        if "clist" in url:
+            return {"data": {"total": 5000, "diff": [{"f3": 10.0}, {"f3": 9.9}, {"f3": -10.0}, {"f3": 5.0}]}}
+        return {"data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}}
 
     def fake_old_kline_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
         return {
@@ -149,6 +150,54 @@ def test_a_stock_provider_old_daily_bars_trigger_scanner_fail_closed() -> None:
     )
     assert len(result.signals) == 0
     assert len(result.trade_plans) == 0
+
+
+def test_a_stock_provider_clist_failure_fails_closed() -> None:
+    """H1: When clist endpoint fails, get_market_breadth returns None (fail-closed)."""
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+
+    def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        if "clist" in url:
+            raise ConnectionError("Eastmoney clist unavailable")
+        return {"data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}}
+
+    provider._get_json = fake_json  # type: ignore[method-assign]
+    breadth = provider.get_market_breadth(date(2026, 6, 12), SCAN_AT)
+
+    assert breadth is None
+    assert provider.provider_status["market_breadth"]["ok"] is False
+    assert "limit_break" in str(provider.provider_status["market_breadth"]["message"]).lower() or "clist" in str(provider.provider_status["market_breadth"]["message"]).lower()
+
+
+def test_high_limit_break_rate_triggers_macro_fuse() -> None:
+    """H2: When limit_break_rate exceeds threshold, breadth passes but scanner blocks."""
+    from src.low_absorb.config import LowAbsorbConfig
+    from src.low_absorb.scanner import LowAbsorbScanner
+
+    # Simulate a day with 52% limit break rate (many stocks at limit up/down)
+    total_stocks = 100
+    limit_break_stocks = 52
+    normal_stocks = total_stocks - limit_break_stocks
+    diff = [{"f3": 10.0}] * limit_break_stocks + [{"f3": 1.0}] * normal_stocks
+
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+
+    def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        if "clist" in url:
+            return {"data": {"total": total_stocks, "diff": diff}}
+        return {"data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}}
+
+    provider._get_json = fake_json  # type: ignore[method-assign]
+    config = LowAbsorbConfig(max_data_staleness_seconds=60, max_limit_break_rate=Decimal("0.45"))
+    scanner = LowAbsorbScanner(provider, config)
+
+    breadth = provider.get_market_breadth(date(2026, 6, 12), SCAN_AT)
+    assert breadth is not None
+    assert breadth.limit_break_rate == Decimal("0.52")
+
+    # market_breadth_gate_passed should reject: 0.52 >= 0.45
+    from src.low_absorb.sentiment import market_breadth_gate_passed
+    assert market_breadth_gate_passed(breadth, config=config, at=SCAN_AT) is False
 
 
 def test_fallback_provider_records_fixture_fallback_status() -> None:
@@ -354,3 +403,161 @@ def test_fixture_provider_stock_news_returns_empty() -> None:
     news = provider.get_stock_news("601138", date(2026, 6, 12))
     assert news == []
     assert provider.get_freshness_info() == {}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Task 1: A-share data-source fail-closed and freshness tests
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_a_stock_provider_normal_operation_breadth_and_freshness() -> None:
+    """Normal operation: breadth parsed, limit_break_rate computed from full-market clist data."""
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+
+    def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        if "clist" in url:
+            # Full market: 4800 total, 3 limit-up, 1 limit-down → rate = 4/4800 ≈ 0.00083
+            return {"data": {"total": 4800, "diff": [
+                {"f3": 10.0}, {"f3": 9.9}, {"f3": 8.0}, {"f3": -10.0},
+                {"f3": 5.0}, {"f3": 2.0}, {"f3": -3.0},
+            ]}}
+        if "ulist" in url:
+            return {"data": {"diff": [{"f3": 0.5, "f6": 850000000000}]}}
+        return {"data": {}}
+
+    provider._get_json = fake_json  # type: ignore[method-assign]
+
+    breadth = provider.get_market_breadth(date(2026, 6, 12), SCAN_AT)
+
+    assert breadth is not None
+    assert breadth.total_market_turnover_cny == Decimal("850000000000")
+    # limit_break_rate = (3 limit_up + 1 limit_down) / 4800 = 4/4800
+    assert breadth.limit_break_rate > 0
+    assert breadth.limit_break_rate < Decimal("0.05")
+    assert provider.provider_status["market_breadth"]["ok"] is True
+
+
+def test_a_stock_provider_freshness_info_structure_when_data_is_fresh() -> None:
+    """get_freshness_info returns complete DataFreshnessInfo for fresh data."""
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+    now = datetime.now()
+    today = now.date()
+    provider.provider_status = {
+        "daily_bars": {
+            "ok": True,
+            "data_source": "eastmoney_kline",
+            "staleness_seconds": 0,
+            "captured_at": now,
+            "market_date": today,
+        },
+        "market_breadth": {
+            "ok": True,
+            "data_source": "eastmoney_index",
+            "staleness_seconds": 0,
+            "captured_at": now,
+            "market_date": today,
+        },
+    }
+    provider._latest_captured = {"daily_bars": now, "market_breadth": now}
+
+    info = provider.get_freshness_info()
+
+    assert set(info.keys()) == {"daily_bars", "market_breadth"}
+    for key in ("daily_bars", "market_breadth"):
+        fi = info[key]
+        assert fi.data_source != ""
+        assert fi.captured_at is not None
+        assert fi.market_date == today
+        assert fi.is_stale is False
+        assert fi.error is None
+
+
+def test_a_stock_provider_api_failure_returns_error_freshness() -> None:
+    """When the Eastmoney API raises, provider returns None and records the error."""
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+
+    def failing_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        raise ConnectionError("Eastmoney unreachable")
+
+    provider._get_json = failing_json  # type: ignore[method-assign]
+
+    breadth = provider.get_market_breadth(date(2026, 6, 12), SCAN_AT)
+    assert breadth is None
+
+    freshness = provider.get_freshness_info()
+    assert "market_breadth" in freshness
+    info = freshness["market_breadth"]
+    assert info.is_stale is True
+    assert info.error is not None
+    assert "Eastmoney" in info.error or "unreachable" in info.error
+
+
+def test_a_stock_provider_empty_turnover_returns_none() -> None:
+    """When the API returns empty or zero turnover, breadth is None."""
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+
+    def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        if "clist" in url:
+            return {"data": {"total": 0, "diff": []}}
+        return {"data": {"diff": []}}
+
+    provider._get_json = fake_json  # type: ignore[method-assign]
+
+    breadth = provider.get_market_breadth(date(2026, 6, 12), SCAN_AT)
+    assert breadth is None
+    assert provider.provider_status["market_breadth"]["ok"] is False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Task 2: Global market provider failure and sentiment tests
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_global_market_provider_stooq_failure_records_error() -> None:
+    """When Stooq HTTP fails, global provider records error and returns empty bars."""
+
+    def failing_get(url: str, params: dict[str, object] | None = None):
+        raise ConnectionError("Stooq unreachable")
+
+    provider = GlobalMarketDataProvider(provider="stooq", http_get=failing_get)
+
+    rows = provider.get_daily_bars(["NVDA"], date(2026, 6, 12), lookback=5)
+
+    assert rows["NVDA"] == []
+    assert provider.provider_status["daily_bars"]["ok"] is False
+    assert "Stooq" in str(provider.provider_status["daily_bars"]["message"]) or "unreachable" in str(provider.provider_status["daily_bars"]["message"])
+
+    freshness = provider.get_freshness_info()
+    assert "daily_bars" in freshness
+    assert freshness["daily_bars"].is_stale is True
+    assert freshness["daily_bars"].error is not None
+
+
+def test_global_data_abnormality_leads_to_sentiment_intercept_or_observe() -> None:
+    """When global data is missing/stale, sentiment结论 must not be '允许'."""
+    from src.low_absorb.sentiment import build_sentiment_permission_snapshot
+
+    snapshot = build_sentiment_permission_snapshot(
+        global_risk_appetite=None,
+        global_risk_error="Stooq unreachable",
+    )
+
+    permission = snapshot.get("tradingPermission", {})
+    status = str(permission.get("status", ""))
+    assert "允许" not in status, f"Global data missing should not yield 允许, got: {status}"
+    assert "拦截" in status or "观察" in status
+
+
+def test_sentiment_snapshot_with_valid_global_data() -> None:
+    """When global data is healthy, sentiment includes global risk gauge."""
+    from src.low_absorb.sentiment import build_sentiment_permission_snapshot
+
+    snapshot = build_sentiment_permission_snapshot(
+        global_risk_appetite=Decimal("65"),
+        global_risk_error=None,
+    )
+
+    gauges = snapshot.get("gauges", [])
+    global_gauges = [g for g in gauges if g.get("id") == "global"]
+    assert len(global_gauges) == 1
+    assert global_gauges[0]["score"] == 65
