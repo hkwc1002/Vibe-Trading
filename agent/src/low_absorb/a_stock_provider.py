@@ -50,38 +50,55 @@ class AStockLowAbsorbProvider(ProviderStatusMixin):
         """Fetch live limit-break rate from Eastmoney A-share stock list.
 
         Returns the ratio of 涨停 (limit-up, ≥9.8%) and 跌停 (limit-down,
-        ≤-9.8%) stocks to the total A-share universe. Uses a single large
-        page request (pz=10000) to cover the full market.
+        ≤-9.8%) stocks to the total A-share universe. Paginates until the
+        full ``total`` is covered so that a truncated first page cannot
+        systematically underestimate the rate.
 
-        Returns ``None`` when the endpoint is unavailable, the response is
-        invalid, or ``total <= 0`` — callers must treat ``None`` as
-        fail-closed (no market breadth data available).
+        Returns ``None`` (fail-closed) when:
+        - The endpoint is unavailable or returns an error.
+        - ``total <= 0`` or ``rows`` is not a list.
+        - Fewer rows are received than ``total`` after exhausting pages
+          (i.e. the API truncated the response and we cannot confirm
+          full coverage).
         """
         try:
-            data = self._get_json(
-                "https://push2.eastmoney.com/api/qt/clist/get",
-                {
-                    "pn": "1",
-                    "pz": "10000",
-                    "po": "1",
-                    "np": "1",
-                    "fltt": "2",
-                    "invt": "2",
-                    "fid": "f3",
-                    "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
-                    "fields": "f3",
-                },
-            )
-            rows = data.get("data", {}).get("diff", []) if isinstance(data.get("data"), dict) else []
-            total = data.get("data", {}).get("total", 0) if isinstance(data.get("data"), dict) else 0
-            if total <= 0 or not isinstance(rows, list):
+            page_size = 5000
+            all_rows: list[dict[str, object]] = []
+            total = 0
+
+            for page in range(1, 11):  # safety cap: max 10 pages
+                data = self._get_json(
+                    "https://push2.eastmoney.com/api/qt/clist/get",
+                    {
+                        "pn": str(page),
+                        "pz": str(page_size),
+                        "po": "1",
+                        "np": "1",
+                        "fltt": "2",
+                        "invt": "2",
+                        "fid": "f3",
+                        "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+                        "fields": "f3",
+                    },
+                )
+                data_obj = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
+                rows = data_obj.get("diff", [])
+                total = data_obj.get("total", 0) if isinstance(data_obj.get("total"), (int, float)) else 0
+
+                if total <= 0 or not isinstance(rows, list):
+                    return None
+
+                all_rows.extend(row for row in rows if isinstance(row, dict))
+
+                if len(all_rows) >= total:
+                    break
+            else:
+                # Exhausted pages without covering total → truncated response
                 return None
 
             limit_up = 0
             limit_down = 0
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
+            for row in all_rows:
                 pct = _decimal(row.get("f3"))
                 if pct >= Decimal("9.8"):
                     limit_up += 1

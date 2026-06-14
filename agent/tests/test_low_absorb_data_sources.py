@@ -121,9 +121,9 @@ def test_a_stock_provider_old_daily_bars_trigger_scanner_fail_closed() -> None:
     provider = AStockLowAbsorbProvider(symbols=["601138"], max_data_staleness=60)
 
     def fake_breadth_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
-        # Single clist request now returns ALL stocks in one response
         if "clist" in url:
-            return {"data": {"total": 5000, "diff": [{"f3": 10.0}, {"f3": 9.9}, {"f3": -10.0}, {"f3": 5.0}]}}
+            diff = [{"f3": 10.0}, {"f3": 9.9}, {"f3": -10.0}, {"f3": 5.0}]
+            return {"data": {"total": len(diff), "diff": diff}}
         return {"data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}}
 
     def fake_old_kline_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
@@ -167,6 +167,31 @@ def test_a_stock_provider_clist_failure_fails_closed() -> None:
     assert breadth is None
     assert provider.provider_status["market_breadth"]["ok"] is False
     assert "limit_break" in str(provider.provider_status["market_breadth"]["message"]).lower() or "clist" in str(provider.provider_status["market_breadth"]["message"]).lower()
+
+
+def test_a_stock_provider_partial_clist_response_fails_closed() -> None:
+    """When Eastmoney returns fewer rows than total, limit_break_rate is None (fail-closed)."""
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+    request_count = 0
+
+    def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        nonlocal request_count
+        if "clist" in url:
+            request_count += 1
+            pn = int((params or {}).get("pn", 1))
+            if pn == 1:
+                # total=5000 but only return 100 rows (truncated first page)
+                return {"data": {"total": 5000, "diff": [{"f3": 10.0}] * 100}}
+            # Subsequent pages return empty — total never reached
+            return {"data": {"total": 5000, "diff": []}}
+        return {"data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}}
+
+    provider._get_json = fake_json  # type: ignore[method-assign]
+    breadth = provider.get_market_breadth(date(2026, 6, 12), SCAN_AT)
+
+    assert breadth is None, "Partial clist response must fail-closed"
+    assert provider.provider_status["market_breadth"]["ok"] is False
+    assert request_count >= 2, "Should have paginated before concluding truncation"
 
 
 def test_high_limit_break_rate_triggers_macro_fuse() -> None:
@@ -414,13 +439,15 @@ def test_a_stock_provider_normal_operation_breadth_and_freshness() -> None:
     """Normal operation: breadth parsed, limit_break_rate computed from full-market clist data."""
     provider = AStockLowAbsorbProvider(symbols=["601138"])
 
+    # Simulate full coverage: total matches len(diff) so pagination succeeds
+    clist_diff = [
+        {"f3": 10.0}, {"f3": 9.9}, {"f3": 8.0}, {"f3": -10.0},
+        {"f3": 5.0}, {"f3": 2.0}, {"f3": -3.0},
+    ]
+
     def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
         if "clist" in url:
-            # Full market: 4800 total, 3 limit-up, 1 limit-down → rate = 4/4800 ≈ 0.00083
-            return {"data": {"total": 4800, "diff": [
-                {"f3": 10.0}, {"f3": 9.9}, {"f3": 8.0}, {"f3": -10.0},
-                {"f3": 5.0}, {"f3": 2.0}, {"f3": -3.0},
-            ]}}
+            return {"data": {"total": len(clist_diff), "diff": clist_diff}}
         if "ulist" in url:
             return {"data": {"diff": [{"f3": 0.5, "f6": 850000000000}]}}
         return {"data": {}}
@@ -431,9 +458,9 @@ def test_a_stock_provider_normal_operation_breadth_and_freshness() -> None:
 
     assert breadth is not None
     assert breadth.total_market_turnover_cny == Decimal("850000000000")
-    # limit_break_rate = (3 limit_up + 1 limit_down) / 4800 = 4/4800
+    # limit_break_rate = (3 limit_up + 1 limit_down) / 7
     assert breadth.limit_break_rate > 0
-    assert breadth.limit_break_rate < Decimal("0.05")
+    assert breadth.limit_break_rate < Decimal("1")
     assert provider.provider_status["market_breadth"]["ok"] is True
 
 
