@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from src.low_absorb.config import LowAbsorbConfig
@@ -159,6 +159,46 @@ def test_stale_data_fails_closed() -> None:
         )
     )
 
+    assert plans == []
+
+
+def test_old_daily_bar_trade_date_fails_closed() -> None:
+    bars: list[DailyBar] = []
+    start_date = date(2026, 5, 18)
+    for idx in range(19):
+        trade_day = start_date + timedelta(days=idx)
+        bars.append(
+            DailyBar(
+                symbol="601138",
+                trade_date=trade_day,
+                open=Decimal("20.00"),
+                high=Decimal("20.30"),
+                low=Decimal("19.80"),
+                close=Decimal("20.00"),
+                volume=Decimal("1000000"),
+                atr=Decimal("1.00"),
+                industry="AI 服务器",
+                stock_name="工业富联",
+                captured_at=datetime.combine(trade_day, datetime.min.time()),
+            )
+        )
+    latest_old = date(2026, 6, 10)
+    bars.append(
+        DailyBar(
+            symbol="601138",
+            trade_date=latest_old,
+            open=Decimal("19.10"),
+            high=Decimal("19.05"),
+            low=Decimal("18.00"),
+            close=Decimal("19.20"),
+            volume=Decimal("700000"),
+            atr=Decimal("1.00"),
+            industry="AI 服务器",
+            stock_name="工业富联",
+            captured_at=datetime.combine(latest_old, time(14, 45)),
+        )
+    )
+    plans = _scan(_provider(daily_bars={"601138": bars}))
     assert plans == []
 
 

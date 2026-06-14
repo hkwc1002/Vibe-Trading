@@ -13,14 +13,16 @@ type Range = "1M" | "3M" | "6M" | "1Y" | "ALL";
 type Overlay = "ma5" | "ma10" | "ma20" | "ma60" | "ema12" | "ema26" | "boll";
 
 const OVERLAY_OPTIONS: { id: Overlay; label: string; group: string }[] = [
-  { id: "ma5", label: "MA5", group: "MA" },
-  { id: "ma10", label: "MA10", group: "MA" },
-  { id: "ma20", label: "MA20", group: "MA" },
-  { id: "ma60", label: "MA60", group: "MA" },
-  { id: "ema12", label: "EMA12", group: "MA" },
-  { id: "ema26", label: "EMA26", group: "MA" },
-  { id: "boll", label: "BOLL", group: "Channel" },
+  { id: "ma5", label: "MA5", group: "均线" },
+  { id: "ma10", label: "MA10", group: "均线" },
+  { id: "ma20", label: "MA20", group: "均线" },
+  { id: "ma60", label: "MA60", group: "均线" },
+  { id: "ema12", label: "EMA12", group: "均线" },
+  { id: "ema26", label: "EMA26", group: "均线" },
+  { id: "boll", label: "BOLL", group: "通道" },
 ];
+
+const RANGE_LABELS: Record<Range, string> = { "1M": "1月", "3M": "3月", "6M": "6月", "1Y": "1年", ALL: "全部" };
 
 const RANGE_BARS: Record<Range, number> = { "1M": 22, "3M": 63, "6M": 126, "1Y": 252, ALL: Infinity };
 const OVERLAY_COLORS = ["#f59e0b", "#8b5cf6", "#3b82f6", "#ec4899", "#10b981", "#f97316", "#6366f1"];
@@ -140,8 +142,8 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
     // Trade markers
     const marks = (markers || []).map(m => ({
       coord: [m.time, m.price],
-      value: m.side === "BUY" ? "B" : "S",
-      name: [`${m.side} @ ${m.price}`, m.qty ? `Qty: ${m.qty}` : "", m.reason || ""].filter(Boolean).join("\n"),
+      value: m.side === "BUY" ? "入" : "离",
+      name: [`${m.side === "BUY" ? "入场" : "离场"} @ ${m.price}`, m.qty ? `数量: ${m.qty}` : "", m.reason || ""].filter(Boolean).join("\n"),
       itemStyle: { color: m.side === "BUY" ? t.upColor : t.downColor },
       label: { color: "#fff", fontSize: 10, fontWeight: "bold" as const },
     }));
@@ -159,9 +161,9 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
     let subYAxis: any = { scale: true, gridIndex: 1, splitLine: { lineStyle: { color: t.gridColor } }, axisLabel: { color: t.textColor, fontSize: 10 } };
 
     if (sub === "vol") {
-      subSeries = [{ name: "Vol", type: "bar", data: vol, xAxisIndex: 1, yAxisIndex: 1 }];
+      subSeries = [{ name: "成交量", type: "bar", data: vol, xAxisIndex: 1, yAxisIndex: 1 }];
       subYAxis = { ...subYAxis, axisLabel: { ...subYAxis.axisLabel, formatter: (v: number) => abbreviateNum(v) } };
-      legendNames.push("Vol");
+      legendNames.push("成交量");
     } else if (sub === "macd") {
       const m = indicatorCache.macd;
       subSeries = [
@@ -209,10 +211,10 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
               const chg = close - open;
               const pct = open ? ((chg / open) * 100).toFixed(2) : "0.00";
               const clr = chg >= 0 ? t.upColor : t.downColor;
-              html += `<br/>O: ${open.toFixed(2)}&nbsp; H: ${high.toFixed(2)}`;
-              html += `<br/>L: ${low.toFixed(2)}&nbsp; C: <span style="color:${clr}"><b>${close.toFixed(2)}</b> ${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chg >= 0 ? "+" : ""}${pct}%)</span>`;
-            } else if (p.seriesName === "Vol") {
-              html += `<br/>Vol: ${abbreviateNum(Number(p.value))}`;
+              html += `<br/>开: ${open.toFixed(2)}&nbsp; 高: ${high.toFixed(2)}`;
+              html += `<br/>低: ${low.toFixed(2)}&nbsp; 收: <span style="color:${clr}"><b>${close.toFixed(2)}</b> ${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chg >= 0 ? "+" : ""}${pct}%)</span>`;
+            } else if (p.seriesName === "成交量") {
+              html += `<br/>成交量: ${abbreviateNum(Number(p.value))}`;
             } else if (p.value != null) {
               html += `<br/>${p.marker} ${p.seriesName}: ${Number(p.value).toFixed(2)}`;
             }
@@ -221,7 +223,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
         },
       },
       toolbox: {
-        feature: { saveAsImage: { title: "Save" }, dataZoom: { title: { zoom: "Zoom", back: "Reset" } }, restore: { title: "Reset" } },
+        feature: { saveAsImage: { title: "保存图片" }, dataZoom: { title: { zoom: "缩放", back: "还原缩放" } }, restore: { title: "重置" } },
         right: 8, top: 0, iconStyle: { borderColor: t.textColor },
       },
       legend: { data: legendNames, textStyle: { color: t.textColor, fontSize: 10 }, right: 80, top: 2, type: "scroll", itemWidth: 12, itemHeight: 8, itemGap: 8 },
@@ -255,7 +257,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
   }, [data, markers, baseData, indicatorCache, extraIndicators, sub, range, overlays, dark]);
 
   if (data.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">No price data</div>;
+    return <div className="text-muted-foreground text-sm p-4">暂无价格数据</div>;
   }
 
   return (
@@ -264,7 +266,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
         {/* Time range */}
         <div className="flex gap-0.5">
           {(["1M", "3M", "6M", "1Y", "ALL"] as const).map((r) => (
-            <button key={r} onClick={() => setRange(r)} className={cn("px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors", range === r ? "bg-primary/15 text-primary font-medium" : "text-muted-foreground/50 hover:text-muted-foreground")}>{r}</button>
+            <button key={r} onClick={() => setRange(r)} className={cn("px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors", range === r ? "bg-primary/15 text-primary font-medium" : "text-muted-foreground/50 hover:text-muted-foreground")}>{RANGE_LABELS[r]}</button>
           ))}
         </div>
 
@@ -276,11 +278,11 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
             onClick={() => setShowMenu(!showMenu)}
             className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
-            Indicators ({overlays.size}) <ChevronDown className="h-3 w-3" />
+            指标 ({overlays.size}) <ChevronDown className="h-3 w-3" />
           </button>
           {showMenu && (
             <div className="absolute top-full left-0 mt-1 z-50 bg-card border rounded-lg shadow-lg p-2 min-w-[160px]" onMouseLeave={() => setShowMenu(false)}>
-              {["MA", "Channel"].map(group => (
+              {["均线", "通道"].map(group => (
                 <div key={group}>
                   <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wider px-1 pt-1">{group}</p>
                   {OVERLAY_OPTIONS.filter(o => o.group === group).map(o => (
@@ -293,7 +295,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
               ))}
               <div className="border-t mt-1 pt-1">
                 <button onClick={() => { setOverlays(new Set()); setShowMenu(false); }} className="text-[10px] text-muted-foreground hover:text-foreground px-1 py-0.5 w-full text-left rounded hover:bg-muted/30">
-                  Bare K (clear all)
+                  裸 K（清除全部）
                 </button>
               </div>
             </div>

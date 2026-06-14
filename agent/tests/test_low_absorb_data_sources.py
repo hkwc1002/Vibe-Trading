@@ -92,6 +92,65 @@ def test_a_stock_provider_parses_eastmoney_daily_bars() -> None:
     assert provider.provider_status["daily_bars"]["data_source"] == "eastmoney_kline"
 
 
+def test_a_stock_provider_daily_bar_captured_at_matches_trade_day() -> None:
+    provider = AStockLowAbsorbProvider(symbols=["601138"])
+
+    def fake_old_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        return {
+            "data": {
+                "klines": [
+                    "2026-06-09,20.00,20.20,20.40,19.90,1000000,20000000,0,0,0,0",
+                    "2026-06-10,20.10,20.00,20.30,19.80,1000000,20000000,0,0,0,0",
+                ]
+            }
+        }
+
+    provider._get_json = fake_old_json  # type: ignore[method-assign]
+    rows = provider.get_daily_bars(["601138"], date(2026, 6, 12), lookback=2)["601138"]
+
+    assert len(rows) == 2
+    assert rows[0].captured_at == datetime(2026, 6, 9, 14, 45)
+    assert rows[1].captured_at == datetime(2026, 6, 10, 14, 45)
+    assert rows[1].captured_at < datetime(2026, 6, 12, 14, 45)
+
+
+def test_a_stock_provider_old_daily_bars_trigger_scanner_fail_closed() -> None:
+    from src.low_absorb.config import LowAbsorbConfig
+    from src.low_absorb.scanner import LowAbsorbScanner
+
+    provider = AStockLowAbsorbProvider(symbols=["601138"], max_data_staleness=60)
+
+    def fake_breadth_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        return {
+            "data": {"diff": [{"f3": 0.5, "f6": 900000000000}]}
+        }
+
+    def fake_old_kline_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        return {
+            "data": {
+                "klines": [
+                    "2026-06-10,20.00,20.20,20.40,19.90,1000000,20000000,0,0,0,0",
+                ]
+            }
+        }
+
+    def fake_json(url: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        if "kline" in url:
+            return fake_old_kline_json(url, params)
+        return fake_breadth_json(url, params)
+
+    provider._get_json = fake_json  # type: ignore[method-assign]
+    config = LowAbsorbConfig(max_data_staleness_seconds=60)
+    scanner = LowAbsorbScanner(provider, config)
+    result = scanner.scan_tail_session_with_signals(
+        date(2026, 6, 12),
+        at=datetime(2026, 6, 12, 14, 45),
+        symbols=["601138"],
+    )
+    assert len(result.signals) == 0
+    assert len(result.trade_plans) == 0
+
+
 def test_fallback_provider_records_fixture_fallback_status() -> None:
     fallback = FixtureMarketDataProvider(
         symbols=["601138"],
@@ -159,7 +218,7 @@ def test_scan_tail_api_returns_provider_status_when_using_python_provider() -> N
     assert response.status_code == 200
     body = response.json()
     assert body["provider_status"]["daily_bars"]["data_source"] == "eastmoney_kline"
-    assert body["data_source"] == "provider"
+    assert body["data_source"] == "fixture_fallback"
 
 
 def test_global_market_provider_parses_yfinance_history() -> None:

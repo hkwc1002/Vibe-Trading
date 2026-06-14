@@ -10,7 +10,16 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..data_provider import ChainBranchStrength, DailyBar, FixtureMarketDataProvider, IntradayBar, MarketBreadth
+from ..data_provider import (
+    AStockLowAbsorbProvider,
+    ChainBranchStrength,
+    DailyBar,
+    FallbackMarketDataProvider,
+    FixtureMarketDataProvider,
+    IntradayBar,
+    MarketBreadth,
+    RateLimitedHttpClient,
+)
 from ..config import LowAbsorbConfig
 from ..models import (
     CloseReport,
@@ -301,7 +310,20 @@ def _fixture_provider_for_scan(trade_date: date, at: datetime) -> FixtureMarketD
 
 
 def _scan_provider(trade_date: date, at: datetime):
-    return _DATA_PROVIDER or _fixture_provider_for_scan(trade_date, at)
+    if _DATA_PROVIDER is not None:
+        return _DATA_PROVIDER
+    config = _STORAGE.get_config()
+    fixture = _fixture_provider_for_scan(trade_date, at)
+    if config.data_provider_mode == "fixture":
+        return fixture
+    real = AStockLowAbsorbProvider(
+        symbols=fixture.symbols,
+        http_client=RateLimitedHttpClient(min_interval_seconds=float(config.eastmoney_min_interval_seconds)),
+        max_data_staleness=config.max_data_staleness_seconds,
+    )
+    if config.data_provider_mode == "real" or not config.enable_fixture_fallback:
+        return real
+    return FallbackMarketDataProvider(primary=real, fallback=fixture)
 
 
 def _supervise_position(position: ManualPosition, request: PositionSupervisionRequest) -> dict[str, object]:
@@ -359,9 +381,23 @@ def scan_tail(request: ScanTailRequest | None = None) -> dict[str, object]:
     for plan in result.trade_plans:
         _STORAGE.trade_plans[plan.plan_id] = plan
     _STORAGE.save()
+    freshness = getattr(provider, "get_freshness_info", lambda: {})()
+    is_fallback = any(
+        isinstance(v, dict) and v.get("data_source") == "fixture_fallback"
+        for v in (getattr(provider, "provider_status", {})).values()
+    )
+    if isinstance(provider, FixtureMarketDataProvider):
+        data_source = "fixture"
+    elif is_fallback:
+        data_source = "fixture_fallback"
+    elif config.data_provider_mode == "real":
+        data_source = "real"
+    else:
+        data_source = "auto"
     return {
         **get_workbench(),
-        "data_source": "fixture" if isinstance(provider, FixtureMarketDataProvider) else "provider",
+        "data_source": data_source,
+        "provider_status": freshness,
         "message": f"generated {len(result.signals)} signals and {len(result.trade_plans)} manual trade plans",
     }
 
