@@ -12,6 +12,8 @@ from .config import LowAbsorbConfig
 from .chain_matrix import default_cost_chain_models
 from .cost_chain.models import CostChainAudit, CostChainCandidate, CostChainCandidateStatus
 from .models import (
+    BacktestResult,
+    BacktestRun,
     CloseReport,
     CostChainModel,
     FeishuNotificationResult,
@@ -20,6 +22,9 @@ from .models import (
     ManualPosition,
     ManualTradePlan,
 )
+
+
+MAX_BACKTEST_RUNS = 50
 
 
 class LowAbsorbRepository(Protocol):
@@ -79,6 +84,8 @@ class InMemoryLowAbsorbStorage:
         self.reports: dict[str, CloseReport] = {}
         self.candidates: dict[str, CostChainCandidate] = {}
         self.audit_log: list[CostChainAudit] = []
+        self.backtest_runs: dict[str, BacktestRun] = {}
+        self.backtest_results: dict[str, BacktestResult] = {}
         self._config = LowAbsorbConfig()
         self._feishu_webhook: str | None = None
         self._cost_chain_models: dict[str, CostChainModel] = default_cost_chain_models()
@@ -92,6 +99,8 @@ class InMemoryLowAbsorbStorage:
         self.reports.clear()
         self.candidates.clear()
         self.audit_log.clear()
+        self.backtest_runs.clear()
+        self.backtest_results.clear()
         self.save()
 
     def seed(
@@ -305,6 +314,42 @@ class InMemoryLowAbsorbStorage:
         """Return all audit entries sorted by time descending."""
         return sorted(self.audit_log, key=lambda a: a.created_at, reverse=True)
 
+    # ── Backtest run methods ──────────────────────────────────────────────
+
+    def add_backtest_run(self, run: BacktestRun, result: BacktestResult | None = None) -> BacktestRun:
+        """Persist a backtest run (and optional full result), enforcing MAX_BACKTEST_RUNS limit."""
+        self.backtest_runs[run.run_id] = run
+        if result is not None:
+            self.backtest_results[run.run_id] = result
+        # Enforce max count — evict oldest by created_at
+        if len(self.backtest_runs) > MAX_BACKTEST_RUNS:
+            sorted_runs = sorted(
+                self.backtest_runs.values(),
+                key=lambda r: r.created_at,
+            )
+            excess = len(sorted_runs) - MAX_BACKTEST_RUNS
+            for r in sorted_runs[:excess]:
+                self.backtest_runs.pop(r.run_id, None)
+                self.backtest_results.pop(r.run_id, None)
+        self.save()
+        return run
+
+    def list_backtest_runs(self) -> list[BacktestRun]:
+        """Return all backtest runs sorted by creation time descending."""
+        return sorted(
+            self.backtest_runs.values(),
+            key=lambda r: r.created_at,
+            reverse=True,
+        )
+
+    def get_backtest_run(self, run_id: str) -> BacktestRun | None:
+        """Look up a backtest run by ID."""
+        return self.backtest_runs.get(run_id)
+
+    def get_backtest_result(self, run_id: str) -> BacktestResult | None:
+        """Look up a full backtest result by run ID."""
+        return self.backtest_results.get(run_id)
+
 
 class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
     """JSON-backed repository for local/dev Low Absorb state."""
@@ -329,6 +374,8 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
             "reports": [item.model_dump(mode="json") for item in self.reports.values()],
             "candidates": [item.model_dump(mode="json") for item in self.candidates.values()],
             "audit_log": [item.model_dump(mode="json") for item in self.audit_log],
+            "backtest_runs": [item.model_dump(mode="json") for item in self.backtest_runs.values()],
+            "backtest_results": [item.model_dump(mode="json") for item in self.backtest_results.values()],
             "settings": {
                 "config": self._config.model_dump(mode="json"),
                 "feishu_webhook": self._feishu_webhook,
@@ -380,6 +427,14 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
         self.audit_log = [
             CostChainAudit.model_validate(row) for row in payload.get("audit_log", [])
         ]
+        self.backtest_runs = {
+            item.run_id: item
+            for item in (BacktestRun.model_validate(row) for row in payload.get("backtest_runs", []))
+        }
+        self.backtest_results = {
+            item.run_id: item
+            for item in (BacktestResult.model_validate(row) for row in payload.get("backtest_results", []))
+        }
         settings = payload.get("settings", {})
         config_payload = settings.get("config")
         if isinstance(config_payload, dict):
