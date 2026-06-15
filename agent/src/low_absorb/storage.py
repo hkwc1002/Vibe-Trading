@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import MutableMapping
+from datetime import datetime as _dt
 from pathlib import Path
 from typing import Any, Protocol
 
 from .config import LowAbsorbConfig
 from .chain_matrix import default_cost_chain_models
+from .cost_chain.models import CostChainAudit, CostChainCandidate, CostChainCandidateStatus
 from .models import (
     CloseReport,
     CostChainModel,
@@ -75,6 +77,8 @@ class InMemoryLowAbsorbStorage:
         self.positions: dict[str, ManualPosition] = {}
         self.notifications: dict[str, FeishuNotificationResult] = {}
         self.reports: dict[str, CloseReport] = {}
+        self.candidates: dict[str, CostChainCandidate] = {}
+        self.audit_log: list[CostChainAudit] = []
         self._config = LowAbsorbConfig()
         self._feishu_webhook: str | None = None
         self._cost_chain_models: dict[str, CostChainModel] = default_cost_chain_models()
@@ -86,6 +90,8 @@ class InMemoryLowAbsorbStorage:
         self.positions.clear()
         self.notifications.clear()
         self.reports.clear()
+        self.candidates.clear()
+        self.audit_log.clear()
         self.save()
 
     def seed(
@@ -158,6 +164,147 @@ class InMemoryLowAbsorbStorage:
         self.save()
         return updated
 
+    def create_candidate(self, candidate: CostChainCandidate) -> CostChainCandidate:
+        """Store a new candidate version and record audit entry."""
+        self.candidates[candidate.candidate_id] = candidate
+        self.audit_log.append(CostChainAudit(
+            audit_id=f"audit-{candidate.candidate_id}-created",
+            candidate_id=candidate.candidate_id,
+            action="created",
+            after_version=candidate.version,
+            actor=candidate.source_name,
+            created_at=candidate.created_at,
+        ))
+        self.save()
+        return candidate
+
+    def list_candidates(self) -> list[CostChainCandidate]:
+        """Return all candidates sorted by creation time descending."""
+        return sorted(self.candidates.values(), key=lambda c: c.created_at, reverse=True)
+
+    def get_candidate(self, candidate_id: str) -> CostChainCandidate | None:
+        """Look up a candidate by ID."""
+        return self.candidates.get(candidate_id)
+
+    def update_candidate_status(
+        self,
+        candidate_id: str,
+        new_status: CostChainCandidateStatus,
+        review_note: str | None = None,
+    ) -> CostChainCandidate:
+        """Update candidate status (approve/reject). If ACTIVE, also promote its version."""
+        candidate = self.candidates.get(candidate_id)
+        if candidate is None:
+            raise ValueError(f"Candidate {candidate_id} not found")
+
+        updated = candidate.model_copy(update={
+            "status": new_status,
+            "reviewed_at": _dt.now(),
+            "review_note": review_note,
+        })
+        self.candidates[candidate_id] = updated
+
+        action = new_status.value.lower()
+        self.audit_log.append(CostChainAudit(
+            audit_id=f"audit-{candidate_id}-{action}",
+            candidate_id=candidate_id,
+            action=action,
+            before_version=None,
+            after_version=updated.version,
+            actor="user",
+            created_at=_dt.now(),
+            note=review_note,
+        ))
+
+        # If approved → set as ACTIVE and promote to cost_chain_models
+        if new_status == CostChainCandidateStatus.APPROVED:
+            promoting_version = updated.version
+
+            # Deactivate other active versions (status=None or ACTIVE)
+            for ver, model in list(self._cost_chain_models.items()):
+                if (model.status is None or model.status == "ACTIVE") and ver != promoting_version:
+                    self._cost_chain_models[ver] = model.model_copy(update={"status": "ROLLED_BACK"})
+
+            # Mark candidate ACTIVE
+            active = updated.model_copy(update={"status": CostChainCandidateStatus.ACTIVE})
+            self.candidates[candidate_id] = active
+            # Build a CostChainModel from the candidate's components
+            new_model = CostChainModel(
+                version=active.version,
+                is_editable=False,
+                components=active.components,
+                status="ACTIVE",
+            )
+            self._cost_chain_models[active.version] = new_model
+            self.audit_log.append(CostChainAudit(
+                audit_id=f"audit-{candidate_id}-activated",
+                candidate_id=candidate_id,
+                action="activated",
+                after_version=active.version,
+                actor="system",
+                created_at=_dt.now(),
+                note="Candidate approved and activated",
+            ))
+
+        self.save()
+        return self.candidates[candidate_id]
+
+    def rollback_to(self, current_version: str, target_version: str) -> bool:
+        """Rollback cost chain: deactivate current_version and restore target_version.
+
+        After rollback:
+        - current_version is marked ROLLED_BACK (no longer consumed by chain_matrix)
+        - target_version is restored to ACTIVE (its components unchanged)
+        - config weights are synced to target_version's signal weights
+
+        Returns True on success, raises ValueError on error.
+        """
+        if current_version == target_version:
+            raise ValueError(f"Cannot rollback: current and target are the same ({current_version})")
+
+        models = self._cost_chain_models
+        if target_version not in models:
+            raise ValueError(f"Target version {target_version} not found in cost chain models")
+        if current_version not in models:
+            raise ValueError(f"Current version {current_version} not found in cost chain models")
+
+        current = models[current_version]
+        target = models[target_version]
+
+        # Mark current version as ROLLED_BACK
+        models[current_version] = current.model_copy(update={
+            "status": "ROLLED_BACK",
+        })
+
+        # Restore target version to ACTIVE (its components remain unchanged)
+        models[target_version] = target.model_copy(update={
+            "status": "ACTIVE",
+        })
+
+        # Sync config weights to target version's signal weights
+        weights = {
+            component.related_sector: component.signal_weight
+            for component in target.components
+        }
+        self._config = self._config.model_copy(update={"chain_cost_signal_weights": weights})
+
+        self.audit_log.append(CostChainAudit(
+            audit_id=f"audit-rollback-{current_version}-to-{target_version}",
+            candidate_id="system-rollback",
+            action="rolled_back",
+            before_version=current_version,
+            after_version=target_version,
+            actor="user",
+            created_at=_dt.now(),
+            note=f"Rolled back {current_version} to {target_version}",
+        ))
+        self.save()
+        return True
+
+    def get_audit_log(self) -> list[CostChainAudit]:
+        """Return all audit entries sorted by time descending."""
+        return sorted(self.audit_log, key=lambda a: a.created_at, reverse=True)
+
 
 class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
     """JSON-backed repository for local/dev Low Absorb state."""
@@ -180,6 +327,8 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
             "positions": [item.model_dump(mode="json") for item in self.positions.values()],
             "notifications": [item.model_dump(mode="json") for item in self.notifications.values()],
             "reports": [item.model_dump(mode="json") for item in self.reports.values()],
+            "candidates": [item.model_dump(mode="json") for item in self.candidates.values()],
+            "audit_log": [item.model_dump(mode="json") for item in self.audit_log],
             "settings": {
                 "config": self._config.model_dump(mode="json"),
                 "feishu_webhook": self._feishu_webhook,
@@ -224,6 +373,13 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
             item.report_id: item
             for item in (CloseReport.model_validate(row) for row in payload.get("reports", []))
         }
+        self.candidates = {
+            item.candidate_id: item
+            for item in (CostChainCandidate.model_validate(row) for row in payload.get("candidates", []))
+        }
+        self.audit_log = [
+            CostChainAudit.model_validate(row) for row in payload.get("audit_log", [])
+        ]
         settings = payload.get("settings", {})
         config_payload = settings.get("config")
         if isinstance(config_payload, dict):

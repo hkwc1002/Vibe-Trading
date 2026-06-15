@@ -1,0 +1,141 @@
+task_id: "002-low-absorb-production-readiness"
+title: "Low Absorb 生产化与外部联调 — Batch B：成本链半自动更新"
+implemented_by: "Claude Code CLI"
+created_at: "2026-06-15"
+
+contract:
+  file: "contract.yaml"
+  risk_level: "A"
+  read: true
+
+understanding:
+  goal: >
+    建立英伟达 AI 服务器成本链半自动采集、候选版本、人工审核、生效、驳回、回滚和审计流程。
+    保证未审核和低置信度的候选版本不影响信号排序。
+  in_scope:
+    - "新建 cost_chain/ 包：候选版本模型 CostChainCandidate，审计模型 CostChainAudit"
+    - "新建 cost_chain/updater.py：半自动采集器，从默认数据生成候选版本（REVIEW_PENDING）"
+    - "修改 models.py：CostChainModel 增加 status 可选项（默认为 ACTIVE）"
+    - "修改 storage.py：支持候选版本 CRUD、审核状态变更、审计记录、回滚"
+    - "修改 api/chain.py：增加 6 个端点（updates/create, updates/list, approve, reject, rollback, audit）"
+    - "修改 chain_matrix.py：chain_priority_score 和 cost_signal_weight_for_sector 只消费 ACTIVE 状态版本"
+    - "新增/更新测试文件：test_low_absorb_chain_matrix.py、test_low_absorb_chain_api.py、test_low_absorb_storage.py"
+  out_of_scope:
+    - "页面中文化、视觉优化、UI 重构"
+    - "前端 frontend/src/** 修改"
+    - "日线级真实回测（Batch C）"
+    - "飞书真实联调（Batch D）"
+    - "本机生产部署配置（Batch E）"
+    - "新增 Python、Node 或系统依赖"
+    - "真实券商下单、自动买卖、自动委托、一键交易"
+    - "用 AI 生成成本权重或成本表"
+
+planned_changes:
+  files_to_modify:
+    - path: "agent/src/low_absorb/cost_chain/__init__.py"
+      reason: "新建：cost_chain 包导出"
+    - path: "agent/src/low_absorb/cost_chain/models.py"
+      reason: "新建：CostChainCandidate（REVIEW_PENDING/APPROVED/REJECTED/ACTIVE/ROLLED_BACK）、CostChainAudit 模型"
+    - path: "agent/src/low_absorb/cost_chain/updater.py"
+      reason: "新建：半自动采集器，collect_cost_chain_update(storage, source) 生成候选版本"
+    - path: "agent/src/low_absorb/models.py"
+      reason: "修改：CostChainModel 增加 status 可选字段"
+    - path: "agent/src/low_absorb/storage.py"
+      reason: "修改：增加 candidates/audit_log 存储、create_candidate/update_candidate_status/list_candidates/"
+      reason: "  get_candidate/rollback_to/get_audit_log 方法；InMemory 和 Json 均需支持"
+    - path: "agent/src/low_absorb/api/chain.py"
+      reason: "修改：增加 6 个端点，覆盖候选创建、审核、驳回、回滚、审计"
+    - path: "agent/src/low_absorb/chain_matrix.py"
+      reason: "修改：chain_priority_score 和 cost_signal_weight_for_sector 只消费 ACTIVE 版本"
+    - path: "agent/tests/test_low_absorb_chain_matrix.py"
+      reason: "修改：新增 ACTIVE 版本消费、低置信度不影响排序测试"
+    - path: "agent/tests/test_low_absorb_chain_api.py"
+      reason: "修改：新增 run/approve/reject/rollback/audit API 测试"
+    - path: "agent/tests/test_low_absorb_storage.py"
+      reason: "修改：新增候选版本、审核状态、审计持久化测试"
+  files_not_to_modify:
+    - path: "frontend/src/**"
+      reason: "UI 独立立项"
+    - path: "pyproject.toml"
+      reason: "新增依赖需先确认"
+    - path: "requirements*.txt"
+      reason: "新增依赖需先确认"
+    - path: "uv.lock"
+      reason: "依赖锁变更需先确认"
+    - path: "package.json"
+      reason: "未授权前端依赖变更"
+    - path: "specs/constitution.md"
+      reason: "项目宪法不得修改"
+
+implementation_steps:
+  - step: "1. 先在 cost_chain/models.py 实现候选和审计模型"
+    detail: "CostChainCandidateStatus 枚举、CostChainCandidate（含 version, source_type, confidence, components, diff_summary, status, timestamps）、CostChainAudit（action, actor, before/after version, timestamp, note）"
+  - step: "2. 更新 models.py CostChainModel 增加 status 可选字段"
+    detail: "默认 None 即视为 ACTIVE，保证向后兼容"
+  - step: "3. 修改 storage.py：InMemoryLowAbsorbStorage 增加 candidates/audit_log"
+    detail: "方法：create_candidate/list_candidates/get_candidate/update_candidate_status/rollback_to/get_audit_log；JsonLowAbsorbStorage 序列化/反序列化支持"
+  - step: "4. 新建 cost_chain/updater.py：半自动采集器"
+    detail: "collect_cost_chain_update(storage, source) 从当前默认模型生成候选版本，对比 active 版本产出 diff_summary"
+  - step: "5. 修改 api/chain.py：新增 6 个端点"
+    detail: "POST /updates（创建候选）、GET /updates（列表）、POST /updates/{id}/approve、POST /updates/{id}/reject、POST /versions/{version}/rollback、GET /audit"
+  - step: "6. 修改 chain_matrix.py：只消费 ACTIVE 版本"
+    detail: "chain_priority_score / cost_signal_weight_for_sector 传入 model 时检查 status，非 ACTIVE 回退到默认配置权重"
+  - step: "7. 编写所有测试（TDD：RED→GREEN→REFACTOR）"
+    detail: "test_low_absorb_storage.py：候选 CRUD、审核状态机、审计持久化、回滚"
+    detail: "test_low_absorb_chain_matrix.py：ACTIVE 版本正常、低置信度/非 ACTIVE 不影响排序"
+    detail: "test_low_absorb_chain_api.py：6 个端点的正常和异常场景"
+  - step: "8. 运行验证命令并记录结果"
+
+tests_and_validation:
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py agent/tests/test_low_absorb_storage.py -q"
+    purpose: "Batch B 专用验证"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+    purpose: "全量后端回归"
+  - command: "cd frontend; npm.cmd run test:run"
+    purpose: "前端回归"
+  - command: "cd frontend; npm.cmd run build"
+    purpose: "前端构建验证"
+  - command: "rg -n \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+    purpose: "金融安全边界扫描"
+
+risk_assessment:
+  risks:
+    - "CostChainModel 增加 status 字段可能影响现有序列化"
+    - "storage.py 增加候选/审计方法可能影响现有仓储协议"
+    - "chain_matrix.py 限制 ACTIVE 版本可能使默认的旧版模型（None status）被视为非 ACTIVE"
+  mitigations:
+    - "status 字段默认为 None，向后兼容视为 ACTIVE"
+    - "新增方法只追加不修改现有仓储协议签名"
+    - "chain_matrix 消费时，model 的 status 为 None 也视为 ACTIVE"
+
+questions_for_codex:
+  - "Batch B 是否需要支持前端展示候选版本审核状态？（contract.yaml 只要求后端 API）"
+  - "cost_chain/updater.py 的采集逻辑是否需要真实 HTTP 依赖，还是只需从默认模型生成候选？"
+  - "回滚操作是否需要一个显式的版本号参数指定目标版本，还是只回滚到上一 ACTIVE 版本？"
+  - "CostChainModel.status 默认 None 视为 ACTIVE 的兼容方式是否接受？"
+
+codex_confirmation:
+  reviewed_by: "Codex"
+  reviewed_at: "2026-06-15"
+  decision: "CONFIRMED"
+  answers:
+    - question: "Batch B 是否需要支持前端展示候选版本审核状态？"
+      decision: "不需要。Batch B 只实现后端 API、存储、chain_matrix 消费约束和测试；不得修改 frontend/src/**。"
+    - question: "cost_chain/updater.py 是否需要真实 HTTP 依赖？"
+      decision: "不需要。Batch B 不新增依赖、不接真实 HTTP 采集；先实现可插拔 source 契约，并使用默认/手工/fixture 数据生成 REVIEW_PENDING 候选版本。真实外部采集可在后续单独授权。"
+    - question: "回滚操作是否需要显式版本号？"
+      decision: "需要。API 以显式目标版本为主，避免“上一 ACTIVE”歧义；如内部 helper 支持上一版本回滚，也必须确定性、可测试、可审计。"
+    - question: "CostChainModel.status 默认 None 视为 ACTIVE 是否接受？"
+      decision: "接受，仅用于兼容历史内置模型。新建候选版本必须显式 status；REVIEW_PENDING、REJECTED、ROLLED_BACK、低置信度版本不得影响信号排序。"
+  required_constraints:
+    - "低置信度或未审核候选不得被 chain_matrix 消费，也不得改变信号排序。"
+    - "APPROVED 不等于自动影响排序；只有通过审核并成为 ACTIVE 的有效版本才可被消费。"
+    - "回滚必须写入审计记录，包含来源版本、目标版本、操作者/任务来源、时间和说明。"
+    - "不得新增依赖，不得修改 frontend/src/**、pyproject.toml、requirements*.txt、uv.lock、package.json 或 frontend/package.json。"
+    - "不得接入券商 API、真实下单、自动交易、一键交易或禁用按钮文案。"
+
+status:
+  ready_to_implement: true
+  blocked_reason: null
+  codex_confirmation_required: true
+  codex_confirmed: true

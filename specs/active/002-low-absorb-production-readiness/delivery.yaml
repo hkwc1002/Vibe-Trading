@@ -1,0 +1,125 @@
+task_id: "002-low-absorb-production-readiness"
+title: "Low Absorb 生产化与外部联调 — Batch B：成本链半自动更新"
+delivered_by: "Claude Code CLI"
+completed_at: "2026-06-15"
+
+contract:
+  file: "contract.yaml"
+  risk_level: "A"
+
+summary:
+  - "Batch B 成本链半自动更新已实现：新建 cost_chain/ 包（models.py, updater.py）"
+  - "CostChainModel 增加 status 可选字段（None=ACTIVE 向后兼容）"
+  - "storage.py 新增候选版本 CRUD、审核状态变更、审计记录、回滚；InMemory 和 Json 均支持"
+  - "api/chain.py 新增 6 个端点：POST/GET /updates, POST /updates/{id}/approve, POST /updates/{id}/reject, POST /versions/{version}/rollback, GET /audit"
+  - "chain_matrix.py cost_signal_weight_for_sector 只消费 ACTIVE 版本；REJECTED/PENDING/ROLLED_BACK 不影响排序"
+  - "rollback_to 语义修正：current_version → ROLLED_BACK，target_version → ACTIVE，保留 target 组件不变，同步 config weights"
+  - "update_candidate_status(APPROVED) 自动降级其他 ACTIVE 版本为 ROLLED_BACK，实现版本互斥"
+  - "后端 296 passed（含 Batch B 71 个新测试），前端 226 passed，构建成功"
+
+changed_files:
+  # Created
+  - path: "agent/src/low_absorb/cost_chain/__init__.py" ; action: "created" ; reason: "包导出"
+  - path: "agent/src/low_absorb/cost_chain/models.py" ; action: "created" ; reason: "CostChainCandidate、CostChainAudit 模型"
+  - path: "agent/src/low_absorb/cost_chain/updater.py" ; action: "created" ; reason: "半自动采集器（可插拔 source 契约）"
+  # Modified
+  - path: "agent/src/low_absorb/models.py" ; action: "modified" ; reason: "CostChainModel 增加 status 可选字段"
+  - path: "agent/src/low_absorb/storage.py" ; action: "modified" ; reason: "候选/审计仓储 + rollback_to 语义修正 + approve 版本互斥；Json 持久化"
+  - path: "agent/src/low_absorb/api/chain.py" ; action: "modified" ; reason: "新增 6 个成本链更新端点"
+  - path: "agent/src/low_absorb/chain_matrix.py" ; action: "modified" ; reason: "_is_active 辅助函数，只消费 ACTIVE 版本"
+  - path: "agent/tests/test_low_absorb_storage.py" ; action: "modified" ; reason: "候选模型/审计模型/仓储 CRUD/审核状态/回滚语义/版本互斥 测试"
+  - path: "agent/tests/test_low_absorb_chain_matrix.py" ; action: "modified" ; reason: "ACTIVE 版本消费、REJECTED/PENDING 不影响排序测试"
+  - path: "agent/tests/test_low_absorb_chain_api.py" ; action: "modified" ; reason: "6 个成本链更新端点的正常/异常场景 + 回滚状态验证测试"
+
+self_review:
+  completed: true
+  reviewed_against:
+    - "contract.yaml"
+    - "implementation.yaml"
+    - "Git diff"
+    - "测试结果"
+    - "构建结果"
+    - "金融安全边界"
+  findings:
+    - severity: "medium"
+      issue: "storage.py 使用 __import__(\"datetime\").datetime.now() 替代模块级 import"
+      fix_status: "fixed — 改用 from datetime import datetime as _dt + _dt.now()"
+    - severity: "medium"
+      issue: "cost_chain/updater.py _compute_diff_summary 使用 list[object] + getattr/hasattr"
+      fix_status: "fixed — 改用 list[CostChainComponent] + 直接属性访问"
+    - severity: "low"
+      issue: "collect_cost_chain_update confidence 参数类型为 str 而非 Literal，使用 # type: ignore"
+      fix_status: "fixed — 改用 Literal[\"high\", \"medium\", \"low\"]"
+    - severity: "high"
+      issue: "Codex CR-1: rollback_to(current_version, target_version) 方向反了 — 把 current 数据写入 target 而非标记 current 为 ROLLED_BACK"
+      fix_status: "fixed — 语义修正为 deactivate current_version + restore target_version ACTIVE + 同步 config weights；审计 before/after 方向正确"
+    - severity: "high"
+      issue: "Codex CR-2/CR-3: 测试覆盖不足 — storage/API 回滚测试未验证组件、状态、审计方向"
+      fix_status: "fixed — 新增 7 个语义测试（组件保持/状态变更/config weights 同步/审计方向/版本互斥）"
+    - severity: "medium"
+      issue: "Codex M1: delivery.yaml known_risks 记录了 rollback 风险但 unresolved_items 写为「无」"
+      fix_status: "fixed — rollback_to 已修复并从 known_risks 移除；unresolved_items 如实反映"
+    - severity: "medium"
+      issue: "Codex M2: update_candidate_status(APPROVED) 未自动降级其他 ACTIVE 版本"
+      fix_status: "fixed — approve 候选时前先遍历 _cost_chain_models 将 status=None 或 ACTIVE 的版本标记为 ROLLED_BACK"
+  revalidated_after_fixes: true
+
+validation_results:
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py agent/tests/test_low_absorb_storage.py -q"
+    status: "passed"
+    output_summary: "71 passed, 1 warning（FastAPI deprecation — 非回归）"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+    status: "passed"
+    output_summary: "297 passed, 1 skipped（Batch B CR 修复 + Batch A 无回归）"
+  - command: "cd frontend; npm.cmd run test:run"
+    status: "passed"
+    output_summary: "26 files, 226 passed（前端无修改）"
+  - command: "cd frontend; npm.cmd run build"
+    status: "passed"
+    output_summary: "构建成功"
+  - command: "rg -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+    status: "passed"
+    output_summary: "仅允许上下文（notifier 人工下单/系统声明、skills 研究文档、goal/policy 安全规则）"
+
+financial_safety:
+  no_broker_execution: true
+  no_auto_trading: true
+  no_broker_api: true
+  no_forbidden_button_labels: true
+  forbidden_label_scan:
+    command: "rg -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+    status: "passed"
+    result: "仅允许上下文，无独立执行按钮"
+
+scope_check:
+  only_allowed_files_changed: true
+  extra_files: []
+
+unresolved_items:
+  - "无"
+
+suggested_commit:
+  message: "[002] feat: Low Absorb Batch B 成本链半自动更新交付 — 候选/审核/审计/回滚 + Codex CR 修复"
+  files_recommended_for_staging:
+    - "agent/src/low_absorb/cost_chain/__init__.py"
+    - "agent/src/low_absorb/cost_chain/models.py"
+    - "agent/src/low_absorb/cost_chain/updater.py"
+    - "agent/src/low_absorb/models.py"
+    - "agent/src/low_absorb/storage.py"
+    - "agent/src/low_absorb/api/chain.py"
+    - "agent/src/low_absorb/chain_matrix.py"
+    - "agent/tests/test_low_absorb_storage.py"
+    - "agent/tests/test_low_absorb_chain_matrix.py"
+    - "agent/tests/test_low_absorb_chain_api.py"
+
+notes_for_codex:
+  focus:
+    - "Batch B 新建 cost_chain/ 包 + 修改 4 个模块"
+    - "CostChainModel.status = None 视为 ACTIVE（向后兼容）"
+    - "候选版本必须先 APPROVED → ACTIVE 才被 chain_matrix 消费"
+    - "rollback_to 语义：current→ROLLED_BACK, target→ACTIVE, 组件不变, config 权重同步"
+    - "approve 候选时自动降级其他 ACTIVE 版本为 ROLLED_BACK（版本互斥）"
+    - "不接真实 HTTP 采集、不新增依赖"
+    - "不修改 frontend/src/**"
+  known_risks:
+    - "JsonLowAbsorbStorage 新增 candidates/audit_log 序列化字段；旧 JSON 状态文件加载时自动忽略缺失字段"

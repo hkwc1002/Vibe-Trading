@@ -9,6 +9,11 @@ from decimal import Decimal
 import pytest
 
 from src.low_absorb.config import LowAbsorbConfig
+from src.low_absorb.cost_chain.models import (
+    CostChainAudit,
+    CostChainCandidate,
+    CostChainCandidateStatus,
+)
 from src.low_absorb.models import (
     CloseReport,
     CostChainComponent,
@@ -304,3 +309,291 @@ class TestJsonStorage:
         assert len(reloaded.notifications) == 1
         assert reloaded.notifications["notif-001"].ok is True
         assert reloaded.notifications["notif-001"].message == "sent"
+
+
+# ---------------------------------------------------------------------------
+# Cost chain candidate model tests (RED phase — will fail until models exist)
+# ---------------------------------------------------------------------------
+
+class TestCostChainCandidateModel:
+    def test_minimal_candidate(self) -> None:
+        candidate = CostChainCandidate(
+            candidate_id="cand-001",
+            version="GB300 NVL72",
+            source_type="manual",
+            source_name="手动维护",
+            confidence="medium",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        assert candidate.candidate_id == "cand-001"
+        assert candidate.status == CostChainCandidateStatus.REVIEW_PENDING
+        assert len(candidate.components) == 1
+
+    def test_candidate_review_fields(self) -> None:
+        candidate = CostChainCandidate(
+            candidate_id="cand-002",
+            version="GB200 NVL72",
+            source_type="automatic",
+            source_name="公开资料采集",
+            confidence="low",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+            reviewed_at=datetime(2026, 6, 15, 10, 0),
+            review_note="待补充来源",
+        )
+        assert candidate.reviewed_at is not None
+        assert candidate.review_note == "待补充来源"
+
+    def test_candidate_diff_summary(self) -> None:
+        candidate = CostChainCandidate(
+            candidate_id="cand-003",
+            version="GB300 NVL72",
+            source_type="fixture",
+            source_name="测试数据",
+            confidence="high",
+            components=[_sample_component(cost_weight="0.50")],
+            diff_summary=["GPU 权重从 0.42 升至 0.50"],
+            created_at=datetime(2026, 6, 15),
+        )
+        assert len(candidate.diff_summary) == 1
+
+
+class TestCostChainAuditModel:
+    def test_minimal_audit(self) -> None:
+        audit = CostChainAudit(
+            audit_id="audit-001",
+            candidate_id="cand-001",
+            action="created",
+            actor="collector",
+            created_at=datetime(2026, 6, 15),
+        )
+        assert audit.audit_id == "audit-001"
+        assert audit.before_version is None
+        assert audit.after_version is None
+
+    def test_audit_with_versions(self) -> None:
+        audit = CostChainAudit(
+            audit_id="audit-002",
+            candidate_id="cand-001",
+            action="activated",
+            before_version="GB200 NVL72",
+            after_version="GB300 NVL72 v2",
+            actor="user",
+            created_at=datetime(2026, 6, 15, 10, 0),
+            note="审核通过，新版本生效",
+        )
+        assert audit.before_version == "GB200 NVL72"
+        assert audit.after_version == "GB300 NVL72 v2"
+        assert audit.note == "审核通过，新版本生效"
+
+
+# ---------------------------------------------------------------------------
+# Cost chain storage tests (RED phase — will fail until storage methods exist)
+# ---------------------------------------------------------------------------
+
+class TestCostChainStorage:
+    def test_create_and_list_candidates(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        candidate = CostChainCandidate(
+            candidate_id="cand-001",
+            version="GB300 NVL72",
+            source_type="manual",
+            source_name="手动维护",
+            confidence="medium",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        storage.create_candidate(candidate)
+        candidates = storage.list_candidates()
+        assert len(candidates) == 1
+        assert candidates[0].candidate_id == "cand-001"
+
+    def test_get_candidate_by_id(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        candidate = CostChainCandidate(
+            candidate_id="cand-001",
+            version="GB300 NVL72",
+            source_type="manual",
+            source_name="手动维护",
+            confidence="medium",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        storage.create_candidate(candidate)
+        loaded = storage.get_candidate("cand-001")
+        assert loaded is not None
+        assert loaded.candidate_id == "cand-001"
+
+    def test_get_nonexistent_candidate(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        loaded = storage.get_candidate("nonexistent")
+        assert loaded is None
+
+    def test_update_candidate_status_to_approved(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        candidate = CostChainCandidate(
+            candidate_id="cand-001",
+            version="GB300 NVL72",
+            source_type="manual",
+            source_name="手动维护",
+            confidence="medium",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        storage.create_candidate(candidate)
+        updated = storage.update_candidate_status(
+            "cand-001",
+            CostChainCandidateStatus.APPROVED,
+            review_note="来源可信",
+        )
+        assert updated.status == CostChainCandidateStatus.ACTIVE
+        assert updated.review_note == "来源可信"
+
+    def test_approve_candidate_deactivates_other_active_versions(self) -> None:
+        """Approving a candidate marks other ACTIVE versions as ROLLED_BACK."""
+        storage = InMemoryLowAbsorbStorage()
+        # Precondition: GB200 NVL72 and GB300 NVL72 are both active (status=None)
+        models_before = storage.get_cost_chain_models()
+        assert models_before["GB200 NVL72"].status is None
+        assert models_before["GB300 NVL72"].status is None
+
+        # Create and approve a candidate for version "custom/manual"
+        candidate = CostChainCandidate(
+            candidate_id="cand-mutual",
+            version="custom/manual",
+            source_type="manual",
+            source_name="手动维护",
+            confidence="medium",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        storage.create_candidate(candidate)
+        storage.update_candidate_status("cand-mutual", CostChainCandidateStatus.APPROVED)
+
+        # GB200 and GB300 should now be ROLLED_BACK
+        models_after = storage.get_cost_chain_models()
+        assert models_after["GB200 NVL72"].status == "ROLLED_BACK"
+        assert models_after["GB300 NVL72"].status == "ROLLED_BACK"
+        # custom/manual should be ACTIVE
+        assert models_after["custom/manual"].status == "ACTIVE"
+
+    def test_update_candidate_status_to_rejected(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        candidate = CostChainCandidate(
+            candidate_id="cand-001",
+            version="GB300 NVL72",
+            source_type="automatic",
+            source_name="自动采集",
+            confidence="low",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        storage.create_candidate(candidate)
+        updated = storage.update_candidate_status(
+            "cand-001",
+            CostChainCandidateStatus.REJECTED,
+            review_note="来源不可信",
+        )
+        assert updated.status == CostChainCandidateStatus.REJECTED
+
+    def test_update_nonexistent_candidate_raises(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        with pytest.raises(ValueError, match="not found"):
+            storage.update_candidate_status(
+                "nonexistent",
+                CostChainCandidateStatus.APPROVED,
+            )
+
+    def test_rollback_preserves_target_components(self) -> None:
+        """rollback_to must NOT overwrite target_version's components."""
+        storage = InMemoryLowAbsorbStorage()
+        models = storage.get_cost_chain_models()
+        gb200_gpu_weight = models["GB200 NVL72"].components[0].cost_weight
+        gb300_gpu_weight = models["GB300 NVL72"].components[0].cost_weight
+        assert gb200_gpu_weight != gb300_gpu_weight  # precond: versions differ
+
+        result = storage.rollback_to("GB300 NVL72", "GB200 NVL72")
+        assert result is True
+
+        models_after = storage.get_cost_chain_models()
+        assert models_after["GB200 NVL72"].components[0].cost_weight == gb200_gpu_weight
+        # Also verify ALL components preserved, not just GPU
+        assert len(models_after["GB200 NVL72"].components) == len(models["GB200 NVL72"].components)
+
+    def test_rollback_deactivates_current_version(self) -> None:
+        """rollback_to marks current_version as ROLLED_BACK."""
+        storage = InMemoryLowAbsorbStorage()
+        storage.rollback_to("GB300 NVL72", "GB200 NVL72")
+        models = storage.get_cost_chain_models()
+        assert models["GB300 NVL72"].status == "ROLLED_BACK"
+
+    def test_rollback_keeps_target_version_active(self) -> None:
+        """rollback_to keeps target_version ACTIVE."""
+        storage = InMemoryLowAbsorbStorage()
+        storage.rollback_to("GB300 NVL72", "GB200 NVL72")
+        models = storage.get_cost_chain_models()
+        # target_version should be ACTIVE (or None = backward compat ACTIVE)
+        gb200_status = models["GB200 NVL72"].status
+        assert gb200_status is None or gb200_status == "ACTIVE"
+
+    def test_rollback_updates_config_weights(self) -> None:
+        """rollback_to syncs config weights to target version's signal weights."""
+        storage = InMemoryLowAbsorbStorage()
+        models = storage.get_cost_chain_models()
+        target_model = models["GB200 NVL72"]
+        expected_weight = target_model.components[0].signal_weight
+
+        storage.rollback_to("GB300 NVL72", "GB200 NVL72")
+
+        config = storage.get_config()
+        assert config.chain_cost_signal_weights.get("GPU/加速卡") == expected_weight
+
+    def test_rollback_audit_before_after(self) -> None:
+        """rollback_to records audit with correct before_version and after_version."""
+        storage = InMemoryLowAbsorbStorage()
+        storage.rollback_to("GB300 NVL72", "GB200 NVL72")
+        audit_log = storage.get_audit_log()
+        rollback_entries = [e for e in audit_log if e.action == "rolled_back"]
+        assert len(rollback_entries) >= 1
+        entry = rollback_entries[0]
+        assert entry.before_version == "GB300 NVL72"
+        assert entry.after_version == "GB200 NVL72"
+        assert entry.actor is not None
+        assert entry.created_at is not None
+
+    def test_rollback_to_same_version_raises(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        with pytest.raises(ValueError, match="same"):
+            storage.rollback_to("GB300 NVL72", "GB300 NVL72")
+
+    def test_rollback_nonexistent_target_raises(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        with pytest.raises(ValueError, match="not found"):
+            storage.rollback_to("GB300 NVL72", "NONEXISTENT")
+
+    def test_audit_log_records_actions(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        candidate = CostChainCandidate(
+            candidate_id="cand-001",
+            version="GB300 NVL72",
+            source_type="manual",
+            source_name="手动维护",
+            confidence="medium",
+            components=[_sample_component()],
+            created_at=datetime(2026, 6, 15),
+        )
+        storage.create_candidate(candidate)
+        storage.update_candidate_status("cand-001", CostChainCandidateStatus.APPROVED)
+        audit_log = storage.get_audit_log()
+        assert len(audit_log) >= 2  # created + approved
+        actions = [entry.action for entry in audit_log]
+        assert "created" in actions
+        assert "approved" in actions
+
+    def test_audit_log_actor(self) -> None:
+        storage = InMemoryLowAbsorbStorage()
+        audit_log = storage.get_audit_log()
+        if audit_log:
+            assert all(hasattr(entry, "actor") for entry in audit_log)
+            assert all(hasattr(entry, "created_at") for entry in audit_log)

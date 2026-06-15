@@ -155,3 +155,86 @@ def test_chain_explanation_contains_sector_info() -> None:
     ]
     explanation = chain_explanation_for_sector(sector="GPU/加速卡", branches=branches, config=config)
     assert "GPU" in explanation or "加速卡" in explanation
+
+
+# ---------------------------------------------------------------------------
+# ACTIVE version consumption tests (Batch B)
+# ---------------------------------------------------------------------------
+
+def test_priority_score_with_active_model() -> None:
+    """ACTIVE status model contributes to priority score."""
+    config = LowAbsorbConfig()
+    branches = [
+        ChainBranchStrength(branch_name="GPU/加速卡", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.30")),
+    ]
+    from src.low_absorb.models import CostChainModel
+    active_model = CostChainModel(
+        version="GB300 NVL72",
+        status="ACTIVE",
+        components=default_cost_chain_models()["GB300 NVL72"].components,
+    )
+    score = chain_priority_score(sector="GPU/加速卡", branches=branches, config=config, model=active_model)
+    assert score > 0
+
+
+def test_priority_score_with_none_status_model() -> None:
+    """None status model is treated as ACTIVE (backward compat)."""
+    config = LowAbsorbConfig()
+    branches = [
+        ChainBranchStrength(branch_name="GPU/加速卡", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.30")),
+    ]
+    from src.low_absorb.models import CostChainModel
+    none_status_model = CostChainModel(
+        version="GB300 NVL72",
+        status=None,
+        components=default_cost_chain_models()["GB300 NVL72"].components,
+    )
+    score = chain_priority_score(sector="GPU/加速卡", branches=branches, config=config, model=none_status_model)
+    assert score > 0
+
+
+def test_priority_score_with_rejected_model_uses_config_default() -> None:
+    """REJECTED status model should not affect scoring; falls back to config default."""
+    config = LowAbsorbConfig()
+    branches = [
+        ChainBranchStrength(branch_name="GPU/加速卡", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.30")),
+    ]
+    from src.low_absorb.models import CostChainModel
+    rejected_model = CostChainModel(
+        version="REJECTED-v1",
+        status="REJECTED",
+        components=default_cost_chain_models()["GB300 NVL72"].components,
+    )
+    score = chain_priority_score(sector="GPU/加速卡", branches=branches, config=config, model=rejected_model)
+    assert score > 0
+
+
+def test_cost_signal_weight_with_rejected_model_falls_back() -> None:
+    """REJECTED model's component weights should not be used; falls back to config."""
+    config = LowAbsorbConfig()
+    from src.low_absorb.models import CostChainModel
+    rejected_model = CostChainModel(
+        version="REJECTED-v1",
+        status="REJECTED",
+        components=default_cost_chain_models()["GB300 NVL72"].components,
+    )
+    weight = cost_signal_weight_for_sector("GPU/加速卡", config, model=rejected_model)
+    assert weight == config.chain_cost_signal_weights.get("GPU/加速卡", Decimal("0"))
+
+
+def test_priority_score_with_pending_model_uses_config() -> None:
+    """REVIEW_PENDING model should not affect scoring."""
+    config = LowAbsorbConfig()
+    branches = [
+        ChainBranchStrength(branch_name="GPU/加速卡", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.30")),
+    ]
+    from src.low_absorb.models import CostChainModel
+    pending_model = CostChainModel(
+        version="PENDING-v1",
+        status="REVIEW_PENDING",
+        components=default_cost_chain_models()["GB300 NVL72"].components,
+    )
+    score = chain_priority_score(sector="GPU/加速卡", branches=branches, config=config, model=pending_model)
+    config_weight = config.chain_cost_signal_weights.get("GPU/加速卡", Decimal("0"))
+    expected = (Decimal("1.30") * Decimal("60")) + (config_weight * Decimal("40"))
+    assert score == expected

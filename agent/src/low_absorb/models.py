@@ -268,6 +268,7 @@ class CostChainModel(LowAbsorbBaseModel):
     version: str = Field(..., min_length=1)
     is_editable: bool = False
     components: list[CostChainComponent] = Field(default_factory=list)
+    status: str | None = None  # None = ACTIVE (backward compat)
 
 
 class ChainSectorStock(LowAbsorbBaseModel):

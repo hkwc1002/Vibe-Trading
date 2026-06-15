@@ -407,3 +407,108 @@ def test_budget_applied_after_priority_sort() -> None:
     qualified_codes = {s.stock_code for s in result.signals}
     assert "600089" in qualified_codes
     assert result.blocked_signals[0].stock_code in {"601138", "603986"}
+
+
+# ── CR-3: Scanner fail-closed on data quality ──────────────────────────────
+
+
+def test_scanner_returns_empty_when_data_quality_not_ok() -> None:
+    symbols = ["600089", "601138"]
+    bars = {"600089": _daily_bars("600089", industry="GPU"), "601138": _daily_bars("601138", industry="GPU")}
+    intra = {s: [IntradayBar(symbol=s, trade_date=TRADE_DATE, at=SCAN_AT, open=Decimal("18.70"), high=Decimal("18.96"), low=Decimal("18.62"), close=Decimal("18.88"), volume=Decimal("120000"))] for s in symbols}
+    branches = [ChainBranchStrength(branch_name="GPU", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.50"))]
+    provider = FixtureMarketDataProvider(symbols=symbols, market_breadth=MarketBreadth(trade_date=TRADE_DATE, captured_at=SCAN_AT, total_market_turnover_cny=Decimal("900000000000"), limit_break_rate=Decimal("0.20")), daily_bars=bars, intraday_bars=intra, chain_strength=branches)
+    scanner = LowAbsorbScanner(provider, _config())
+    result = scanner.scan_tail_session_with_signals(TRADE_DATE, at=SCAN_AT, symbols=symbols, data_quality_ok=False)
+    assert len(result.signals) == 0
+    assert len(result.trade_plans) == 0
+
+
+def test_scanner_proceeds_when_data_quality_ok() -> None:
+    symbols = ["600089"]
+    bars = {"600089": _daily_bars("600089", industry="GPU")}
+    intra = {"600089": [IntradayBar(symbol="600089", trade_date=TRADE_DATE, at=SCAN_AT, open=Decimal("18.70"), high=Decimal("18.96"), low=Decimal("18.62"), close=Decimal("18.88"), volume=Decimal("120000"))]}
+    branches = [ChainBranchStrength(branch_name="GPU", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.50"))]
+    provider = FixtureMarketDataProvider(symbols=symbols, market_breadth=MarketBreadth(trade_date=TRADE_DATE, captured_at=SCAN_AT, total_market_turnover_cny=Decimal("900000000000"), limit_break_rate=Decimal("0.20")), daily_bars=bars, intraday_bars=intra, chain_strength=branches)
+    scanner = LowAbsorbScanner(provider, _config())
+    result = scanner.scan_tail_session_with_signals(TRADE_DATE, at=SCAN_AT, symbols=symbols, data_quality_ok=True)
+    assert len(result.signals) == 1
+    assert len(result.trade_plans) == 1
+
+
+def test_scanner_default_preserves_behavior() -> None:
+    symbols = ["600089"]
+    bars = {"600089": _daily_bars("600089", industry="GPU")}
+    intra = {"600089": [IntradayBar(symbol="600089", trade_date=TRADE_DATE, at=SCAN_AT, open=Decimal("18.70"), high=Decimal("18.96"), low=Decimal("18.62"), close=Decimal("18.88"), volume=Decimal("120000"))]}
+    branches = [ChainBranchStrength(branch_name="GPU", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.50"))]
+    provider = FixtureMarketDataProvider(symbols=symbols, market_breadth=MarketBreadth(trade_date=TRADE_DATE, captured_at=SCAN_AT, total_market_turnover_cny=Decimal("900000000000"), limit_break_rate=Decimal("0.20")), daily_bars=bars, intraday_bars=intra, chain_strength=branches)
+    scanner = LowAbsorbScanner(provider, _config())
+    result = scanner.scan_tail_session_with_signals(TRADE_DATE, at=SCAN_AT, symbols=symbols)
+    assert len(result.signals) == 1
+
+
+# ── CR-2: Scanner auto-quality derivation via orchestrator ─────────────────
+
+
+def test_scanner_auto_fail_closed_when_orchestrator_unhealthy() -> None:
+    """CR-2: When orchestrator has all sources OPEN, scanner auto-fails without manual param."""
+    from src.low_absorb.data_sources.a_share_orchestrator import AShareOrchestrator
+    orch = AShareOrchestrator(failure_threshold=1)
+    orch.record_source_failure("mootdx", "err")
+    orch.record_source_failure("mootdx", "err")
+    orch.record_source_failure("tencent", "err")
+    orch.record_source_failure("tencent", "err")
+
+    symbols = ["600089"]
+    bars = {"600089": _daily_bars("600089", industry="GPU")}
+    intra = {"600089": [IntradayBar(symbol="600089", trade_date=TRADE_DATE, at=SCAN_AT, open=Decimal("18.70"), high=Decimal("18.96"), low=Decimal("18.62"), close=Decimal("18.88"), volume=Decimal("120000"))]}
+    branches = [ChainBranchStrength(branch_name="GPU", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.50"))]
+    provider = FixtureMarketDataProvider(symbols=symbols, market_breadth=MarketBreadth(trade_date=TRADE_DATE, captured_at=SCAN_AT, total_market_turnover_cny=Decimal("900000000000"), limit_break_rate=Decimal("0.20")), daily_bars=bars, intraday_bars=intra, chain_strength=branches)
+    scanner = LowAbsorbScanner(provider, _config(), data_source_orchestrator=orch)
+    result = scanner.scan_tail_session_with_signals(TRADE_DATE, at=SCAN_AT, symbols=symbols)
+    assert len(result.signals) == 0
+    assert len(result.trade_plans) == 0
+
+
+def test_scanner_auto_proceeds_when_orchestrator_healthy() -> None:
+    """CR-2: When orchestrator reports healthy sources, scanner proceeds normally."""
+    from src.low_absorb.data_sources.a_share_orchestrator import AShareOrchestrator
+    orch = AShareOrchestrator()
+
+    symbols = ["600089"]
+    bars = {"600089": _daily_bars("600089", industry="GPU")}
+    intra = {"600089": [IntradayBar(symbol="600089", trade_date=TRADE_DATE, at=SCAN_AT, open=Decimal("18.70"), high=Decimal("18.96"), low=Decimal("18.62"), close=Decimal("18.88"), volume=Decimal("120000"))]}
+    branches = [ChainBranchStrength(branch_name="GPU", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.50"))]
+    provider = FixtureMarketDataProvider(symbols=symbols, market_breadth=MarketBreadth(trade_date=TRADE_DATE, captured_at=SCAN_AT, total_market_turnover_cny=Decimal("900000000000"), limit_break_rate=Decimal("0.20")), daily_bars=bars, intraday_bars=intra, chain_strength=branches)
+    scanner = LowAbsorbScanner(provider, _config(), data_source_orchestrator=orch)
+    result = scanner.scan_tail_session_with_signals(TRADE_DATE, at=SCAN_AT, symbols=symbols)
+    assert len(result.signals) == 1
+
+
+# ── CR-2 Round 4: scanner uses real fetch quality result ───────────────────
+
+
+def test_scanner_fail_closed_on_stale_quality() -> None:
+    """When orchestrator fetch returns stale data, scanner auto-fails without manual param."""
+    from src.low_absorb.data_sources.a_share_orchestrator import AShareOrchestrator
+    from src.low_absorb.data_sources.a_share_adapters import AdapterResult
+    class _StaleMock:
+        def fetch_quote(self, symbol: str) -> AdapterResult:
+            return AdapterResult(ok=True, selected_source="mootdx", data={}, returned_rows=0, freshness_seconds=9999)
+        def fetch_kline(self, symbol: str, lookback: int = 20) -> AdapterResult:
+            return AdapterResult(ok=True, selected_source="mootdx", data=[], returned_rows=0, freshness_seconds=9999)
+    orch = AShareOrchestrator(max_staleness_seconds=60)
+    # Override adapter factory to return stale data
+    orch._adapter_factory = lambda sid: _StaleMock()
+    # Do a fetch to store stale result
+    orch.fetch_quote("601138")
+
+    symbols = ["600089"]
+    bars = {"600089": _daily_bars("600089", industry="GPU")}
+    intra = {"600089": [IntradayBar(symbol="600089", trade_date=TRADE_DATE, at=SCAN_AT, open=Decimal("18.70"), high=Decimal("18.96"), low=Decimal("18.62"), close=Decimal("18.88"), volume=Decimal("120000"))]}
+    branches = [ChainBranchStrength(branch_name="GPU", rank=1, total_branches=3, slope=Decimal("0.08"), relative_strength=Decimal("1.50"))]
+    provider = FixtureMarketDataProvider(symbols=symbols, market_breadth=MarketBreadth(trade_date=TRADE_DATE, captured_at=SCAN_AT, total_market_turnover_cny=Decimal("900000000000"), limit_break_rate=Decimal("0.20")), daily_bars=bars, intraday_bars=intra, chain_strength=branches)
+    scanner = LowAbsorbScanner(provider, _config(), data_source_orchestrator=orch)
+    result = scanner.scan_tail_session_with_signals(TRADE_DATE, at=SCAN_AT, symbols=symbols)
+    assert len(result.signals) == 0
+    assert len(result.trade_plans) == 0
