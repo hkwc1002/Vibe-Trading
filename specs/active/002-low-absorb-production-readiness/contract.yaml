@@ -1,0 +1,392 @@
+task_id: "002-low-absorb-production-readiness"
+title: "Low Absorb 生产化与外部联调"
+risk_level: "A"
+created_by: "Codex"
+created_at: "2026-06-14"
+
+owners:
+  specification: "Codex"
+  implementation: "Claude Code CLI"
+  review: "Codex"
+  approval: "User"
+
+workflow:
+  required_inputs:
+    - "brief.md"
+    - "contract.yaml"
+  markdown_docs:
+    required_for_risk_levels:
+      - "A"
+    files:
+      - "spec.md"
+      - "plan.md"
+      - "tasks.md"
+  implementation_brief:
+    file: "implementation.yaml"
+    require_codex_confirmation_for:
+      - "A"
+    optional_for:
+      - "C"
+  delivery:
+    file: "delivery.yaml"
+    required: true
+  review:
+    file: "review.yaml"
+    required_for_commit: true
+
+goal: "将 Low Absorb 非 UI 生产化主线补齐为真实数据可接入、异常可降级、成本链可审核、日线回测可运行、飞书联调可控制、Windows 本机可长期运行的状态。"
+
+scope:
+  allow:
+    - path: "agent/src/low_absorb/data_sources/**"
+      reason: "新增多源行情 provider、健康检查、fallback、熔断和数据质量模型"
+    - path: "agent/src/low_absorb/cost_chain/**"
+      reason: "新增成本链半自动采集、候选版本、审核、审计和回滚模块"
+    - path: "agent/src/low_absorb/backtest/**"
+      reason: "新增日线级真实回测模块"
+    - path: "agent/src/low_absorb/deployment/**"
+      reason: "新增本机生产配置校验、备份和恢复模块"
+    - path: "agent/src/low_absorb/api/**"
+      reason: "增加或调整 Low Absorb 数据源、成本链、回测、通知、健康检查 API"
+    - path: "agent/src/low_absorb/config.py"
+      reason: "新增数据源、回测、飞书、部署相关配置项"
+    - path: "agent/src/low_absorb/data_provider.py"
+      reason: "兼容现有 MarketDataProvider 契约"
+    - path: "agent/src/low_absorb/a_stock_provider.py"
+      reason: "承接 A 股真实数据源实现或适配"
+    - path: "agent/src/low_absorb/fallback_provider.py"
+      reason: "规范 dev/test fixture fallback 行为"
+    - path: "agent/src/low_absorb/global_market_provider.py"
+      reason: "补齐全球与美股行情情绪输入"
+    - path: "agent/src/low_absorb/sentiment.py"
+      reason: "消费真实数据质量状态并 fail-closed"
+    - path: "agent/src/low_absorb/scanner.py"
+      reason: "数据异常时阻断信号和交易计划生成"
+    - path: "agent/src/low_absorb/chain_matrix.py"
+      reason: "只消费已审核生效的成本链版本"
+    - path: "agent/src/low_absorb/notifier.py"
+      reason: "实现飞书真实联调开关、幂等和审计"
+    - path: "agent/src/low_absorb/storage.py"
+      reason: "持久化数据源状态、成本链候选、回测、通知审计和备份所需状态"
+    - path: "agent/src/low_absorb/models.py"
+      reason: "补齐共享 Pydantic 数据模型"
+    - path: "agent/tests/test_low_absorb*.py"
+      reason: "补齐 Low Absorb 后端单元、契约和集成测试"
+    - path: "agent/tests/test_low_absorb_feishu_integration.py"
+      reason: "新增受环境变量保护的飞书真实联调测试"
+    - path: "docs/deployment/low_absorb_production.md"
+      reason: "新增 Windows 本机长期运行部署说明"
+    - path: "specs/active/002-low-absorb-production-readiness/implementation.yaml"
+      reason: "Claude Code 实现前理解复述"
+    - path: "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+      reason: "Claude Code 实现后交付证据"
+  deny:
+    - path: "specs/constitution.md"
+      reason: "项目宪法不得修改"
+    - path: "package.json"
+      reason: "本任务未授权前端依赖变更"
+    - path: "frontend/package.json"
+      reason: "本任务未授权前端依赖变更"
+    - path: "pyproject.toml"
+      reason: "如需新增 Python 依赖必须先停止并请求确认"
+    - path: "requirements*.txt"
+      reason: "如需新增 Python 依赖必须先停止并请求确认"
+    - path: "uv.lock"
+      reason: "如需依赖锁文件变更必须先停止并请求确认"
+    - path: "frontend/src/**"
+      reason: "页面中文化、视觉优化和 UI 改动已独立立项；本阶段默认不修改前端源码"
+    - path: "agent/ai_low_absorb/**"
+      reason: "Low Absorb 后端模块必须使用 agent/src/low_absorb"
+    - path: ".github/**"
+      reason: "本任务不修改 CI 或版本流程"
+
+non_goals:
+  - "不做页面中文化、首页/菜单/按钮文字或视觉体验优化"
+  - "不接入券商交易执行 API"
+  - "不实现真实下单、自动买卖、自动委托或一键交易"
+  - "不使用 AI 生成行情、财务、成本权重或历史回测数据"
+  - "不在未获授权时新增依赖或修改项目配置"
+
+requirements:
+  - id: "R1"
+    text: "实现真实行情数据源稳定性：A 股多源 provider、全球与美股行情输入、fallback、熔断、冲突检测、数据新鲜度和 fail-closed。"
+    priority: "MUST"
+    acceptance:
+      - "A 股数据源优先级符合 a-stock-data 原则：mootdx、腾讯优先，东方财富仅用于独有数据或必要备份且限流。"
+      - "接口失败、空数据、字段缺失、数据过期、多源冲突和全部来源失败均不会生成新的交易建议。"
+      - "数据源状态可通过 API 查询，包含来源、健康分、熔断状态、最近成功和最近失败。"
+    evidence_required:
+      - "后端测试覆盖单源成功、fallback、冲突、过期、全部失败 fail-closed。"
+      - "delivery.yaml 记录真实依赖是否可用，以及未新增依赖的证明或停止确认记录。"
+  - id: "R2"
+    text: "实现英伟达 AI 服务器成本链半自动采集与人工审核。"
+    priority: "MUST"
+    acceptance:
+      - "采集结果只能生成候选版本，人工审核通过后才可成为 ACTIVE。"
+      - "低置信度或未审核候选不得影响信号排序。"
+      - "支持审核通过、驳回、回滚和审计查询。"
+    evidence_required:
+      - "成本链候选、审核、生效、驳回、回滚和审计测试。"
+      - "API 契约测试覆盖 /low-absorb/chain/updates/*。"
+  - id: "R3"
+    text: "实现日线级真实回测引擎接入。"
+    priority: "MUST"
+    acceptance:
+      - "回测第一阶段只支持日线级，不实现分钟级 14:45 或 10:00 监督回测。"
+      - "回测输入包含日期范围、股票池、参数快照、成本链版本和数据源版本。"
+      - "回测输出包含信号漏斗、计划数量、失效原因、胜率、平均 R、最大回撤、分支归因和限制说明。"
+    evidence_required:
+      - "日线级回测成功、失败、缺失数据和可重复性测试。"
+      - "delivery.yaml 说明未把系统建议等同真实成交。"
+  - id: "R4"
+    text: "实现飞书全类型通知受控真实联调。"
+    priority: "MUST"
+    acceptance:
+      - "推荐卡片、10:00 风控提醒、成交回填提醒、收盘复盘报告、测试卡片均支持 mock 与受控真实发送。"
+      - "真实发送默认关闭，必须显式环境变量或配置开启。"
+      - "Webhook 永不完整回显，通知结果持久化并具备幂等键。"
+    evidence_required:
+      - "mock 发送、幂等、防重复、Webhook 掩码和 env guard 测试。"
+      - "真实联调测试缺少环境变量时 skip。"
+  - id: "R5"
+    text: "实现 Windows 本机长期运行部署与生产配置。"
+    priority: "MUST"
+    acceptance:
+      - "提供生产环境变量、启动停止、日志查看、备份、恢复和回滚说明。"
+      - "readiness 检查存储、环境变量、真实数据源、fixture fallback、成本链有效版本和飞书配置状态。"
+      - "生产模式不得用 fixture fallback 伪装真实数据。"
+    evidence_required:
+      - "健康检查 readiness/liveness 测试。"
+      - "docs/deployment/low_absorb_production.md。"
+  - id: "R6"
+    text: "遵守金融安全边界和本阶段非 UI 边界。"
+    priority: "MUST"
+    acceptance:
+      - "无券商交易执行 API、真实下单、自动交易、一键交易实现。"
+      - "无独立按钮文案：买入、卖出、下单、自动交易。"
+      - "不修改 frontend/src/**，除非 Codex 先更新契约。"
+    evidence_required:
+      - "delivery.yaml 金融安全检查。"
+      - "禁用文案扫描或人工 grep 证据。"
+
+tasks:
+  - id: "T1"
+    title: "Batch A：多源行情稳定性"
+    depends_on: []
+    allow_files:
+      - "agent/src/low_absorb/data_sources/**"
+      - "agent/src/low_absorb/config.py"
+      - "agent/src/low_absorb/data_provider.py"
+      - "agent/src/low_absorb/a_stock_provider.py"
+      - "agent/src/low_absorb/fallback_provider.py"
+      - "agent/src/low_absorb/global_market_provider.py"
+      - "agent/src/low_absorb/sentiment.py"
+      - "agent/src/low_absorb/scanner.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/src/low_absorb/api/**"
+      - "agent/tests/test_low_absorb_data_sources.py"
+      - "agent/tests/test_low_absorb_sentiment.py"
+      - "agent/tests/test_low_absorb_scanner.py"
+      - "agent/tests/test_low_absorb_api_contract.py"
+    deny_files:
+      - "frontend/src/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "uv.lock"
+    steps:
+      - "先写数据质量模型、fallback、冲突、过期和 fail-closed 测试。"
+      - "实现 A 股多源编排和全球行情 provider，真实依赖不可用时使用显式 fixture 标记。"
+      - "补齐数据源状态 API，并让 scanner/sentiment 消费 fail-closed 状态。"
+      - "运行任务级后端测试并记录结果。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_data_sources.py agent/tests/test_low_absorb_sentiment.py agent/tests/test_low_absorb_scanner.py -q"
+        expected: "通过；若真实依赖不可用，测试必须使用 mock/fixture 并显式标记。"
+    acceptance:
+      - "多源 fallback、冲突、过期、全部失败 fail-closed 均有测试。"
+      - "生产模式不使用 fixture 伪装真实数据。"
+      - "如需新增依赖，已停止并请求 Codex 更新契约。"
+  - id: "T2"
+    title: "Batch B：成本链半自动更新"
+    depends_on:
+      - "T1"
+    allow_files:
+      - "agent/src/low_absorb/cost_chain/**"
+      - "agent/src/low_absorb/chain_matrix.py"
+      - "agent/src/low_absorb/storage.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/src/low_absorb/api/chain.py"
+      - "agent/tests/test_low_absorb_chain_matrix.py"
+      - "agent/tests/test_low_absorb_chain_api.py"
+      - "agent/tests/test_low_absorb_storage.py"
+    deny_files:
+      - "frontend/src/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "uv.lock"
+    steps:
+      - "先写候选版本、审核、驳回、回滚、低置信度不影响排序的测试。"
+      - "实现半自动采集候选模型和审核状态流。"
+      - "让 chain_matrix 只消费 ACTIVE 版本。"
+      - "补齐成本链更新、审核、回滚和审计 API。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py agent/tests/test_low_absorb_storage.py -q"
+        expected: "通过；未审核候选不得影响信号排序。"
+    acceptance:
+      - "成本链候选版本必须经过人工审核后生效。"
+      - "支持 APPROVED、REJECTED、ACTIVE、ROLLED_BACK。"
+      - "审计记录包含来源、差异、动作和时间。"
+  - id: "T3"
+    title: "Batch C：日线级真实回测"
+    depends_on:
+      - "T1"
+      - "T2"
+    allow_files:
+      - "agent/src/low_absorb/backtest/**"
+      - "agent/src/low_absorb/api/backtest.py"
+      - "agent/src/low_absorb/data_provider.py"
+      - "agent/src/low_absorb/scanner.py"
+      - "agent/src/low_absorb/trade_plan.py"
+      - "agent/src/low_absorb/risk.py"
+      - "agent/src/low_absorb/storage.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/tests/test_low_absorb_backtest.py"
+      - "agent/tests/test_low_absorb_api_contract.py"
+    deny_files:
+      - "frontend/src/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "uv.lock"
+    steps:
+      - "先写日线回测请求、成功、失败、缺失历史数据、可重复性测试。"
+      - "实现日线级 dataset、engine、metrics。"
+      - "接入 /low-absorb/backtest/runs 任务 API。"
+      - "确保回测结果不写入真实人工成交或真实持仓。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_backtest.py agent/tests/test_low_absorb_api_contract.py -q"
+        expected: "通过；回测缺失数据时返回 failed 并说明缺失区间。"
+    acceptance:
+      - "第一阶段只支持日线级回测。"
+      - "输出包含信号漏斗、计划数量、胜率、平均 R、最大回撤、分支归因和限制说明。"
+      - "系统建议与人工成交假设分离。"
+  - id: "T4"
+    title: "Batch D：飞书真实联调"
+    depends_on:
+      - "T1"
+      - "T2"
+    allow_files:
+      - "agent/src/low_absorb/notifier.py"
+      - "agent/src/low_absorb/api/settings.py"
+      - "agent/src/low_absorb/api/reports.py"
+      - "agent/src/low_absorb/storage.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/tests/test_low_absorb_notifier.py"
+      - "agent/tests/test_low_absorb_reports.py"
+      - "agent/tests/test_low_absorb_feishu_integration.py"
+    deny_files:
+      - "frontend/src/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "uv.lock"
+    steps:
+      - "先写 mock 发送、真实发送 env guard、Webhook 掩码、幂等防重复测试。"
+      - "实现全类型通知构建与发送策略。"
+      - "持久化通知审计记录。"
+      - "新增真实联调测试，缺少环境变量时必须 skip。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_notifier.py agent/tests/test_low_absorb_reports.py agent/tests/test_low_absorb_feishu_integration.py -q"
+        expected: "通过；未配置真实发送环境变量时联调测试 skip。"
+    acceptance:
+      - "真实发送默认关闭。"
+      - "Webhook 不完整回显。"
+      - "推荐、风控、成交回填、复盘和测试卡片均有幂等审计。"
+  - id: "T5"
+    title: "Batch E：本机生产部署配置"
+    depends_on:
+      - "T1"
+      - "T2"
+      - "T3"
+      - "T4"
+    allow_files:
+      - "agent/src/low_absorb/deployment/**"
+      - "agent/src/low_absorb/api/health.py"
+      - "agent/src/low_absorb/api/__init__.py"
+      - "agent/src/low_absorb/config.py"
+      - "agent/src/low_absorb/storage.py"
+      - "docs/deployment/low_absorb_production.md"
+      - "agent/tests/test_low_absorb_api_contract.py"
+      - "agent/tests/test_low_absorb_main_api_integration.py"
+      - "agent/tests/test_low_absorb_storage.py"
+    deny_files:
+      - "frontend/src/**"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "uv.lock"
+    steps:
+      - "先写 readiness/liveness、生产 fixture fallback 禁用、存储不可写、成本链缺失测试。"
+      - "实现健康检查 API 和生产配置校验。"
+      - "实现备份恢复辅助逻辑或文档化命令。"
+      - "编写 Windows 本机长期运行部署文档。"
+    validation:
+      - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_api_contract.py agent/tests/test_low_absorb_main_api_integration.py agent/tests/test_low_absorb_storage.py -q"
+        expected: "通过；readiness 能明确报告缺失项。"
+    acceptance:
+      - "提供 Windows 本机环境变量、启动停止、日志、备份恢复和回滚说明。"
+      - "readiness 覆盖存储、环境变量、真实数据源、fixture fallback、成本链有效版本和飞书配置。"
+      - "生产模式 fixture fallback 误开启时 readiness 失败。"
+
+validation:
+  commands:
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+      required: true
+      risk_if_skipped: "无法证明后端生产化主线、数据降级、回测、飞书和健康检查未回归。"
+    - command: "cd frontend; npm.cmd run test:run"
+      required: true
+      risk_if_skipped: "虽然本阶段不改前端，但无法证明现有 Low Absorb 页面和禁用文案测试未被后端契约变更间接破坏。"
+    - command: "cd frontend; npm.cmd run build"
+      required: true
+      risk_if_skipped: "无法证明前端类型检查和生产构建仍通过。"
+    - command: "rg -n \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+      required: true
+      risk_if_skipped: "无法提供金融安全边界文案扫描证据；允许出现的上下文必须在 delivery.yaml 解释。"
+  page_checks: []
+
+financial_safety:
+  applies: true
+  forbidden_capabilities:
+    - "真实券商下单"
+    - "自动买卖"
+    - "自动委托"
+    - "券商交易执行 API"
+    - "一键交易"
+  forbidden_button_labels:
+    - "买入"
+    - "卖出"
+    - "下单"
+    - "自动交易"
+  allowed_manual_labels:
+    - "推送飞书"
+    - "复制人工下单信息"
+    - "记录人工成交"
+    - "标记失效"
+    - "生成风控提醒"
+    - "记录卖出"
+
+stop_conditions:
+  - "需要修改 scope.allow 之外的文件"
+  - "需要修改 frontend/src/** 或引入 UI 中文化/视觉优化"
+  - "需要新增依赖或修改项目配置"
+  - "真实行情依赖不可用且无法用现有依赖或受控 mock 完成测试"
+  - "接口契约缺失或与现有实现冲突"
+  - "需求与金融安全边界冲突"
+  - "指定验证命令无法运行且无法判断风险"
+  - "发现真实交易执行、自动交易或券商执行 API 风险"
+  - "任何密钥、Webhook、Token 可能完整暴露到前端、日志、测试快照或 API 响应"
+
+commit_policy:
+  require_codex_review: true
+  require_user_authorization: true
+  only_stage_approved_files: true
+  forbidden_git_commands:
+    - "git add ."
+    - "git add -A"
+    - "git commit -am"
