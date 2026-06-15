@@ -8,11 +8,11 @@ contract:
   risk_level: "A"
 
 summary:
-  - "第四轮 CR 修复完成并验证通过（256 后端测试，无回归）。"
-  - "check_data_quality() 现在同时检查来源可用性 AND 最近一次 fetch 的实际质量结果（ok/conflicts/freshness_seconds/fail_closed_reason）"
-  - "scanner: 调用 check_data_quality() 时会因 stale/conflict/fail_closed 自动返回空信号"
-  - "sentiment: 调用 check_data_quality() 时会因 quality 失败自动拦截"
-  - "新增 7 个测试验证 check_data_quality() 在 stale/conflict/fixture/healthy 场景下的正确行为"
+  - "PR 二次审查 CR 修复完成（257 后端测试，无回归）。"
+  - "PR-CR-1: TencentAdapter 按股票代码选择 sh/sz 前缀（6/9->sh, 0/1/2/3->sz）；解析腾讯响应为结构化 dict（price/close/open/high/low）。"
+  - "PR-CR-2: BaiduSinaAdapter 移除硬编码日期（动态生成 end 参数）；CSV 输出转换为 list[dict] 含 trade_date/open/high/low/close/volume；设置 freshness_seconds。"
+  - "PR-CR-3: 新增 Tencent sz 前缀测试、结构化输出断言、BaiduSina 结构化输出测试。"
+  - "PR-CR-4: 适配器修复已提交到 PR 分支。"
 
 changed_files:
   # Created
@@ -51,7 +51,7 @@ self_review:
 validation_results:
   - command: "pytest agent/tests -k low_absorb -q"
     status: "passed"
-    output_summary: "256 passed, 1 skipped（+7 R4 CR 测试，无回归）"
+    output_summary: "257 passed, 1 skipped（+1 CR 测试，无回归）"
   - command: "cd frontend; npm.cmd run test:run"
     status: "passed"
     output_summary: "26 files, 226 passed"
@@ -74,10 +74,8 @@ scope_check:
 
 notes_for_codex:
   focus:
-    - "R4-CR1: check_data_quality() 现在存储最近一次 fetch 结果并检查 ok/conflicts/freshness/fail_closed_reason"
-    - "R4-CR2: scanner 因 stale fetch 自动返回空结果（测试已覆盖）"
-    - "R4-CR3: sentiment 因 stale/fail_closed fetch 自动拦截（测试已覆盖）"
-    - "R4-CR4: delivery.yaml 描述与实际实现一致"
-    - "后端 256 通过，前端 226 通过，构建成功"
+    - "PR 二次审查 CR-1~CR-4 修复完成：Tencent sh/sz + structured response；BaiduSina dynamic date + structured K-line"
+    - "后端 257 通过，前端 226 通过，构建成功"
+    - "前端未修改，Python 依赖未新增"
   known_risks:
     - "熔断状态为内存级，应用重启后重置"
