@@ -1,0 +1,142 @@
+task_id: "002-low-absorb-production-readiness"
+title: "Low Absorb 生产化与外部联调 - Batch A：多源行情稳定性"
+reviewed_by: "Codex"
+reviewed_at: "2026-06-15"
+review_type: "pre_commit"
+review_round: 5
+
+verdict: "APPROVED_FOR_COMMIT"
+
+inputs_reviewed:
+  brief_md: true
+  contract_yaml: true
+  implementation_yaml: true
+  delivery_yaml: true
+  markdown_docs: true
+  git_diff: true
+  validation_logs: true
+  page_evidence: false
+  ci_results: false
+
+checks:
+  contract_compliance: "passed"
+  scope: "passed"
+  requirement_trace: "passed"
+  validation: "passed"
+  self_review: "passed"
+  financial_safety: "passed"
+  no_unrelated_changes: "passed"
+
+resolved_from_round_4:
+  - id: "R4-CR1"
+    result: "resolved"
+    note: "AShareOrchestrator 已新增 _last_fetch_result，fetch_quote/fetch_kline 会记录最近一次 MultiSourceFetchResult；check_data_quality() 会检查 ok、conflicts、freshness_seconds 和 fail_closed_reason。"
+  - id: "R4-CR2"
+    result: "resolved"
+    note: "scanner 在注入 data_source_orchestrator 且质量失败时默认返回空 signals/trade_plans；新增 stale 质量异常测试。"
+  - id: "R4-CR3"
+    result: "resolved"
+    note: "sentiment 在注入 orchestrator 且质量失败时会将 a_share_quality_ok 推导为 false；新增 stale/fail_closed 许可拦截测试。"
+  - id: "R4-CR4"
+    result: "resolved"
+    note: "delivery.yaml 已更新为第五轮修复说明，并记录 256 个 Low Absorb 后端测试通过。"
+
+verification_performed_by_codex:
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_data_sources_orchestrator.py agent/tests/test_low_absorb_scanner.py agent/tests/test_low_absorb_sentiment.py -q"
+    status: "passed"
+    output_summary: "67 passed in 0.27s"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+    status: "passed"
+    output_summary: "256 passed, 1 skipped, 3079 deselected, 3 warnings"
+
+delivery_validation_accepted:
+  - command: "pytest agent/tests -k low_absorb -q"
+    status: "passed"
+    output_summary: "delivery.yaml 记录 256 passed, 1 skipped"
+  - command: "cd frontend; npm.cmd run test:run"
+    status: "passed"
+    output_summary: "delivery.yaml 记录 26 files, 226 passed"
+  - command: "cd frontend; npm.cmd run build"
+    status: "passed"
+    output_summary: "delivery.yaml 记录构建成功"
+  - command: "rg forbidden trading labels"
+    status: "passed"
+    output_summary: "delivery.yaml 记录仅允许上下文，无独立执行按钮"
+
+findings:
+  critical: []
+  high: []
+  medium:
+    - id: "M1"
+      file: "agent/src/low_absorb/api/workbench.py"
+      line: 377
+      issue: "POST /low-absorb/scan-tail 当前仍通过 MarketDataProvider 路径运行 LowAbsorbScanner，没有注入 data_source_orchestrator。"
+      impact: "本轮第四轮阻断项要求的 scanner/sentiment 质量注入路径已在类层和测试层闭环；主 scan-tail API 目前依赖 AStockLowAbsorbProvider/FallbackMarketDataProvider 自身的 fail-closed 逻辑。该分层可以接受进入提交，但后续 Batch A/B 或生产化联调应统一主 API 的数据质量来源，避免两个质量通道长期并存。"
+      blocking: false
+    - id: "M2"
+      file: "agent/src/low_absorb/data_sources/a_share_orchestrator.py"
+      line: 90
+      issue: "check_data_quality() 在没有任何 last fetch 时会回退到 source availability 判断。"
+      impact: "当前作为健康预检可接受；如果后续将其作为生产 scan-tail 唯一准入门，应增加“无最近 fetch 结果则不允许生成交易建议”的严格模式或按 trade_date/at 绑定质量快照。"
+      blocking: false
+  low:
+    - id: "L1"
+      file: "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+      line: 1
+      issue: "delivery.yaml 和部分源码注释在当前终端显示存在编码乱码。"
+      impact: "不影响本轮代码行为和测试结论；后续可单独进行文档/编码显示治理。"
+      blocking: false
+
+changes_requested: []
+
+approved_for_commit:
+  allowed_files:
+    - "agent/src/low_absorb/api/__init__.py"
+    - "agent/src/low_absorb/api/data_sources.py"
+    - "agent/src/low_absorb/config.py"
+    - "agent/src/low_absorb/data_sources/__init__.py"
+    - "agent/src/low_absorb/data_sources/a_share_adapters.py"
+    - "agent/src/low_absorb/data_sources/a_share_orchestrator.py"
+    - "agent/src/low_absorb/data_sources/global_provider.py"
+    - "agent/src/low_absorb/data_sources/health.py"
+    - "agent/src/low_absorb/data_sources/models.py"
+    - "agent/src/low_absorb/scanner.py"
+    - "agent/src/low_absorb/sentiment.py"
+    - "agent/tests/test_low_absorb_api_contract.py"
+    - "agent/tests/test_low_absorb_data_sources_adapters.py"
+    - "agent/tests/test_low_absorb_data_sources_global_provider.py"
+    - "agent/tests/test_low_absorb_data_sources_health.py"
+    - "agent/tests/test_low_absorb_data_sources_models.py"
+    - "agent/tests/test_low_absorb_data_sources_orchestrator.py"
+    - "agent/tests/test_low_absorb_scanner.py"
+    - "agent/tests/test_low_absorb_sentiment.py"
+    - "specs/active/002-low-absorb-production-readiness/brief.md"
+    - "specs/active/002-low-absorb-production-readiness/contract.yaml"
+    - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
+    - "specs/active/002-low-absorb-production-readiness/plan.md"
+    - "specs/active/002-low-absorb-production-readiness/review.yaml"
+    - "specs/active/002-low-absorb-production-readiness/spec.md"
+    - "specs/active/002-low-absorb-production-readiness/tasks.md"
+  forbidden_files:
+    - "*"
+  commit_message: "feat(low-absorb): add production data source stability batch"
+  draft_pr_title: "[002] feat: Low Absorb Batch A data source stability"
+  draft_pr_notes:
+    - "仅允许暂存 allowed_files 中列出的文件。"
+    - "工作区存在其他未跟踪或已修改文件，不在本次批准范围内。"
+    - "禁止 git add .、git add -A、git commit -am。"
+    - "提交前必须执行 git diff --cached --name-only 并确认只包含 allowed_files。"
+
+git_safety:
+  user_authorization_required: true
+  only_stage_allowed_files: true
+  forbidden_commands:
+    - "git add ."
+    - "git add -A"
+    - "git commit -am"
+  required_pre_commit_check:
+    - "git diff --cached --name-only 必须只包含 approved_for_commit.allowed_files。"
+    - "不得暂存 specs/archived/**、.codex/**、.playwright-mcp/**、.pr3-review-worktree/**、AGENT.md、co.sh、low_absorb_codex_stage6_10_execution_plan.md 等非本轮批准文件。"
+
+summary: "第五轮审查通过，可以进入用户授权后的提交阶段。第四轮阻断项已闭环：check_data_quality() 已消费最近一次 fetch 质量结果，scanner/sentiment 的 fail-closed 注入路径已有测试覆盖，Codex 本地复跑关键测试 67 passed，并复跑 Low Absorb 后端全量回归 256 passed, 1 skipped。前端测试和构建采用 delivery.yaml 证据。本次批准仅限 allowed_files 精确文件清单，不允许暂存其他工作区变更。"

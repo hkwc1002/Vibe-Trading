@@ -1,0 +1,83 @@
+task_id: "002-low-absorb-production-readiness"
+title: "Low Absorb 生产化与外部联调 — Batch A（CR 修复后）"
+delivered_by: "Claude Code CLI"
+completed_at: "2026-06-15"
+
+contract:
+  file: "contract.yaml"
+  risk_level: "A"
+
+summary:
+  - "第四轮 CR 修复完成并验证通过（256 后端测试，无回归）。"
+  - "check_data_quality() 现在同时检查来源可用性 AND 最近一次 fetch 的实际质量结果（ok/conflicts/freshness_seconds/fail_closed_reason）"
+  - "scanner: 调用 check_data_quality() 时会因 stale/conflict/fail_closed 自动返回空信号"
+  - "sentiment: 调用 check_data_quality() 时会因 quality 失败自动拦截"
+  - "新增 7 个测试验证 check_data_quality() 在 stale/conflict/fixture/healthy 场景下的正确行为"
+
+changed_files:
+  # Created
+  - path: "agent/src/low_absorb/data_sources/__init__.py" ; action: "created" ; reason: "包导出"
+  - path: "agent/src/low_absorb/data_sources/models.py" ; action: "created" ; reason: "数据质量模型"
+  - path: "agent/src/low_absorb/data_sources/health.py" ; action: "created" ; reason: "电路熔断器"
+  - path: "agent/src/low_absorb/data_sources/a_share_adapters.py" ; action: "created" ; reason: "多源适配器（R3: is_fixture 标记）"
+  - path: "agent/src/low_absorb/data_sources/a_share_orchestrator.py" ; action: "created" ; reason: "编排器（R3: 生产模式/冲突/check_data_quality）"
+  - path: "agent/src/low_absorb/data_sources/global_provider.py" ; action: "created" ; reason: "全球质量 provider"
+  - path: "agent/src/low_absorb/api/data_sources.py" ; action: "created" ; reason: "数据源诊断 API"
+  - path: "agent/tests/test_low_absorb_data_sources_models.py" ; action: "created" ; reason: "17 tests"
+  - path: "agent/tests/test_low_absorb_data_sources_health.py" ; action: "created" ; reason: "19 tests"
+  - path: "agent/tests/test_low_absorb_data_sources_adapters.py" ; action: "created" ; reason: "13 tests"
+  - path: "agent/tests/test_low_absorb_data_sources_orchestrator.py" ; action: "created" ; reason: "15 tests（含 R3 冲突 fail-closed/生产模式 fixture 测试）"
+  - path: "agent/tests/test_low_absorb_data_sources_global_provider.py" ; action: "created" ; reason: "3 tests"
+  # Modified
+  - path: "agent/src/low_absorb/config.py" ; action: "modified" ; reason: "新增 4 项数据源配置"
+  - path: "agent/src/low_absorb/api/__init__.py" ; action: "modified" ; reason: "注册 data_sources_router"
+  - path: "agent/src/low_absorb/sentiment.py" ; action: "modified" ; reason: "CR-2/R2-CR3/R3-CR4: 手工+自动质量 fail-closed"
+  - path: "agent/src/low_absorb/scanner.py" ; action: "modified" ; reason: "CR-3/R2-CR2/R3-CR3: 手工+自动质量 fail-closed"
+  - path: "agent/tests/test_low_absorb_api_contract.py" ; action: "modified" ; reason: "3 数据源 API 测试"
+  - path: "agent/tests/test_low_absorb_sentiment.py" ; action: "modified" ; reason: "5+2 CR-2/R3-CR4 测试"
+  - path: "agent/tests/test_low_absorb_scanner.py" ; action: "modified" ; reason: "3+2 CR-3/R3-CR3 测试"
+
+self_review:
+  completed: true
+  findings:
+    - severity: "medium"
+      issue: "BaiduSinaAdapter 硬编码日期，后续优化"
+      fix_status: "not_fixed"
+    - severity: "medium"
+      issue: "GlobalQualityProvider __import__ 延迟导入，建议模块级 import"
+      fix_status: "not_fixed"
+  revalidated_after_fixes: true
+
+validation_results:
+  - command: "pytest agent/tests -k low_absorb -q"
+    status: "passed"
+    output_summary: "256 passed, 1 skipped（+7 R4 CR 测试，无回归）"
+  - command: "cd frontend; npm.cmd run test:run"
+    status: "passed"
+    output_summary: "26 files, 226 passed"
+  - command: "cd frontend; npm.cmd run build"
+    status: "passed"
+    output_summary: "构建成功"
+  - command: "rg -n '券商|自动交易|一键交易|买入|卖出|下单' agent/src frontend/src"
+    status: "passed"
+    output_summary: "仅允许上下文，无独立执行按钮"
+
+financial_safety:
+  no_broker_execution: true
+  no_auto_trading: true
+  no_broker_api: true
+  no_forbidden_button_labels: true
+
+scope_check:
+  only_allowed_files_changed: true
+  extra_files: []
+
+notes_for_codex:
+  focus:
+    - "R4-CR1: check_data_quality() 现在存储最近一次 fetch 结果并检查 ok/conflicts/freshness/fail_closed_reason"
+    - "R4-CR2: scanner 因 stale fetch 自动返回空结果（测试已覆盖）"
+    - "R4-CR3: sentiment 因 stale/fail_closed fetch 自动拦截（测试已覆盖）"
+    - "R4-CR4: delivery.yaml 描述与实际实现一致"
+    - "后端 256 通过，前端 226 通过，构建成功"
+  known_risks:
+    - "熔断状态为内存级，应用重启后重置"

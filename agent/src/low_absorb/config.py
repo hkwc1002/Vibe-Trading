@@ -52,6 +52,12 @@ class LowAbsorbConfig(BaseModel):
     global_market_provider: Literal["auto", "yfinance", "stooq"] = "auto"
     eastmoney_min_interval_seconds: Decimal = Field(default=Decimal("1.0"), gt=0)
 
+    # ── Data source quality settings ───────────────────────────────────────
+    data_source_failure_threshold: int = Field(default=3, ge=1, description="Consecutive failures before circuit opens")
+    data_source_cooldown_seconds: int = Field(default=60, ge=0, description="Circuit breaker cooldown in seconds")
+    data_conflict_tolerance_pct: Decimal = Field(default=Decimal("0.02"), ge=0, description="Max acceptable difference % between sources")
+    data_production_mode: bool = Field(default=False, description="When True, fixture fallback is forbidden; all failing must fail-closed")
+
     @model_validator(mode="after")
     def validate_threshold_order(self) -> "LowAbsorbConfig":
         if self.ma20_deviation_min > self.ma20_deviation_max:
