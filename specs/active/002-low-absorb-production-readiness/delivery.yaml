@@ -1,5 +1,5 @@
 task_id: "002-low-absorb-production-readiness"
-title: "Low Absorb 生产化与外部联调 — Batch B：成本链半自动更新"
+title: "Batch C：日线级真实回测引擎接入"
 delivered_by: "Claude Code CLI"
 completed_at: "2026-06-15"
 
@@ -8,28 +8,76 @@ contract:
   risk_level: "A"
 
 summary:
-  - "Batch B 成本链半自动更新已实现：新建 cost_chain/ 包（models.py, updater.py）"
-  - "CostChainModel 增加 status 可选字段（None=ACTIVE 向后兼容）"
-  - "storage.py 新增候选版本 CRUD、审核状态变更、审计记录、回滚；InMemory 和 Json 均支持"
-  - "api/chain.py 新增 6 个端点：POST/GET /updates, POST /updates/{id}/approve, POST /updates/{id}/reject, POST /versions/{version}/rollback, GET /audit"
-  - "chain_matrix.py cost_signal_weight_for_sector 只消费 ACTIVE 版本；REJECTED/PENDING/ROLLED_BACK 不影响排序"
-  - "rollback_to 语义修正：current_version → ROLLED_BACK，target_version → ACTIVE，保留 target 组件不变，同步 config weights"
-  - "update_candidate_status(APPROVED) 自动降级其他 ACTIVE 版本为 ROLLED_BACK，实现版本互斥"
-  - "后端 296 passed（含 Batch B 71 个新测试），前端 226 passed，构建成功"
+  - "新建 agent/src/low_absorb/backtest/ 包（__init__.py、models.py、dataset.py、metrics.py、engine.py）"
+  - "在 models.py 增加 BacktestRunRequest、BacktestRun、BacktestBranchAttribution、BacktestSensitivityRow、BacktestResult"
+  - "在 storage.py 增加回测持久化方法和 MAX_BACKTEST_RUNS 上限"
+  - "改造 api/backtest.py：从骨架返回升级为真实回测任务 API"
+  - "重写 test_low_absorb_backtest.py：40 个测试覆盖模型、数据集、引擎、指标、存储上限和 API 契约"
+  - "更新 test_low_absorb_api_contract.py：回测 API 契约断言"
 
 changed_files:
-  # Created
-  - path: "agent/src/low_absorb/cost_chain/__init__.py" ; action: "created" ; reason: "包导出"
-  - path: "agent/src/low_absorb/cost_chain/models.py" ; action: "created" ; reason: "CostChainCandidate、CostChainAudit 模型"
-  - path: "agent/src/low_absorb/cost_chain/updater.py" ; action: "created" ; reason: "半自动采集器（可插拔 source 契约）"
-  # Modified
-  - path: "agent/src/low_absorb/models.py" ; action: "modified" ; reason: "CostChainModel 增加 status 可选字段"
-  - path: "agent/src/low_absorb/storage.py" ; action: "modified" ; reason: "候选/审计仓储 + rollback_to 语义修正 + approve 版本互斥；Json 持久化"
-  - path: "agent/src/low_absorb/api/chain.py" ; action: "modified" ; reason: "新增 6 个成本链更新端点"
-  - path: "agent/src/low_absorb/chain_matrix.py" ; action: "modified" ; reason: "_is_active 辅助函数，只消费 ACTIVE 版本"
-  - path: "agent/tests/test_low_absorb_storage.py" ; action: "modified" ; reason: "候选模型/审计模型/仓储 CRUD/审核状态/回滚语义/版本互斥 测试"
-  - path: "agent/tests/test_low_absorb_chain_matrix.py" ; action: "modified" ; reason: "ACTIVE 版本消费、REJECTED/PENDING 不影响排序测试"
-  - path: "agent/tests/test_low_absorb_chain_api.py" ; action: "modified" ; reason: "6 个成本链更新端点的正常/异常场景 + 回滚状态验证测试"
+  - path: "agent/src/low_absorb/backtest/__init__.py"
+    action: "created"
+    reason: "新建 backtest 包导出"
+  - path: "agent/src/low_absorb/backtest/models.py"
+    action: "created"
+    reason: "BacktestSignalRow、BacktestPlanRow、BacktestSampleRow 内部数据模型"
+  - path: "agent/src/low_absorb/backtest/dataset.py"
+    action: "created"
+    reason: "通过 MarketDataProvider 装载历史日线行情"
+  - path: "agent/src/low_absorb/backtest/metrics.py"
+    action: "created"
+    reason: "回测指标计算：胜率、平均 R、最大回撤、分支归因、敏感性和限制声明"
+  - path: "agent/src/low_absorb/backtest/engine.py"
+    action: "created"
+    reason: "回测主引擎：接收 BacktestRunRequest→运行扫描漏斗→产出 BacktestResult"
+  - path: "agent/src/low_absorb/models.py"
+    action: "modified"
+    reason: "增加 BacktestRunRequest、BacktestRun、BacktestBranchAttribution、BacktestSensitivityRow、BacktestResult"
+  - path: "agent/src/low_absorb/storage.py"
+    action: "modified"
+    reason: "增加回测持久化方法和 MAX_BACKTEST_RUNS 上限"
+  - path: "agent/src/low_absorb/api/backtest.py"
+    action: "modified"
+    reason: "从骨架返回升级为真实回测任务 API（POST /runs、GET /runs、GET /runs/{id}）"
+  - path: "agent/tests/test_low_absorb_backtest.py"
+    action: "modified"
+    reason: "从 8 个骨架测试替换为 40 个真实回测单元/契约测试"
+  - path: "agent/tests/test_low_absorb_api_contract.py"
+    action: "modified"
+    reason: "更新回测 API 契约断言为 USE_POST_RUNS"
+  - path: "specs/active/002-low-absorb-production-readiness/implementation.yaml"
+    action: "modified"
+    reason: "更新为 Batch C 实现计划（含 Codex 确认）"
+
+requirement_trace:
+  R3（日线级真实回测）:
+    status: "done"
+    files:
+      - "agent/src/low_absorb/backtest/engine.py"
+      - "agent/src/low_absorb/backtest/dataset.py"
+      - "agent/src/low_absorb/backtest/metrics.py"
+      - "agent/src/low_absorb/backtest/models.py"
+      - "agent/src/low_absorb/models.py"
+      - "agent/src/low_absorb/api/backtest.py"
+      - "agent/src/low_absorb/storage.py"
+    tests:
+      - "agent/tests/test_low_absorb_backtest.py"
+      - "agent/tests/test_low_absorb_api_contract.py"
+    evidence:
+      - "BacktestResult 含信号漏斗、计划数量、胜率、平均 R、最大回撤、分支归因、敏感性和限制说明"
+      - "POST /runs 创建并执行回测，GET /runs/{id} 查询"
+      - "symbols=None fail-closed，空 symbols 返回 0 样本"
+      - "storage 上限 50 条测试覆盖"
+      - "可重复性：同一输入配置产生一致结果"
+  R6（金融安全边界）:
+    status: "done"
+    files:
+      - "agent/src/low_absorb/backtest/engine.py"
+    evidence:
+      - "回测引擎不创建 broker orders / execution requests / real trading records"
+      - "回测结果不写入真实 ManualFill/ManualPosition"
+      - "limitations 强制包含日线级/非真实成交/非收益承诺声明"
 
 self_review:
   completed: true
@@ -42,44 +90,62 @@ self_review:
     - "金融安全边界"
   findings:
     - severity: "medium"
-      issue: "storage.py 使用 __import__(\"datetime\").datetime.now() 替代模块级 import"
-      fix_status: "fixed — 改用 from datetime import datetime as _dt + _dt.now()"
+      issue: "BacktestResult 缺少 error 字段导致验证错误"
+      fix_status: "已修复"
     - severity: "medium"
-      issue: "cost_chain/updater.py _compute_diff_summary 使用 list[object] + getattr/hasattr"
-      fix_status: "fixed — 改用 list[CostChainComponent] + 直接属性访问"
+      issue: "engine.run() 早期返回不持久化存储"
+      fix_status: "已修复：提取 _execute()，run() 统一持久化"
     - severity: "low"
-      issue: "collect_cost_chain_update confidence 参数类型为 str 而非 Literal，使用 # type: ignore"
-      fix_status: "fixed — 改用 Literal[\"high\", \"medium\", \"low\"]"
+      issue: "POST /runs 参数改为 Pydantic body 模型"
+      fix_status: "已修复"
+    - severity: "low"
+      issue: "API 合同测试断言过时"
+      fix_status: "已修复为 USE_POST_RUNS"
     - severity: "high"
-      issue: "Codex CR-1: rollback_to(current_version, target_version) 方向反了 — 把 current 数据写入 target 而非标记 current 为 ROLLED_BACK"
-      fix_status: "fixed — 语义修正为 deactivate current_version + restore target_version ACTIVE + 同步 config weights；审计 before/after 方向正确"
+      issue: "CR-1: 完整 BacktestResult 未持久化"
+      fix_status: "已修复：storage 增加 backtest_results dict + store_backtest_result/get_backtest_result"
     - severity: "high"
-      issue: "Codex CR-2/CR-3: 测试覆盖不足 — storage/API 回滚测试未验证组件、状态、审计方向"
-      fix_status: "fixed — 新增 7 个语义测试（组件保持/状态变更/config weights 同步/审计方向/版本互斥）"
+      issue: "CR-2: JSON 存储未序列化回测数据"
+      fix_status: "已修复：JsonLowAbsorbStorage save/load 含 backtest_runs 和 backtest_results"
+    - severity: "high"
+      issue: "CR-3: GET /runs/{id} 只返回摘要"
+      fix_status: "已修复：优先返回完整 BacktestResult，回退到 BacktestRun"
     - severity: "medium"
-      issue: "Codex M1: delivery.yaml known_risks 记录了 rollback 风险但 unresolved_items 写为「无」"
-      fix_status: "fixed — rollback_to 已修复并从 known_risks 移除；unresolved_items 如实反映"
+      issue: "CR-4: 失败回测 error 未写入持久化"
+      fix_status: "已修复：engine.run() 创建 BacktestRun 时同步写入 error=result.error"
     - severity: "medium"
-      issue: "Codex M2: update_candidate_status(APPROVED) 未自动降级其他 ACTIVE 版本"
-      fix_status: "fixed — approve 候选时前先遍历 _cost_chain_models 将 status=None 或 ACTIVE 的版本标记为 ROLLED_BACK"
+      issue: "CR-5: 敏感性分析主流程为空"
+      fix_status: "已修复：engine._execute() 预计算 avg_r 传入 metrics.compute()"
+    - severity: "medium"
+      issue: "CR-6: delivery.yaml 金融安全扫描不准确"
+      fix_status: "已修复：重新扫描并记录实际命中的上下文分类"
   revalidated_after_fixes: true
 
 validation_results:
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py agent/tests/test_low_absorb_storage.py -q"
+  - command: "pytest agent/tests/test_low_absorb_backtest.py agent/tests/test_low_absorb_api_contract.py -q"
     status: "passed"
-    output_summary: "71 passed, 1 warning（FastAPI deprecation — 非回归）"
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+    output_summary: "59 passed（含 CR-1~CR-5 + 3 个 run_id 唯一性测试）"
+    risk_if_not_run: ""
+  - command: "pytest agent/tests -k low_absorb -q"
     status: "passed"
-    output_summary: "297 passed, 1 skipped（Batch B CR 修复 + Batch A 无回归）"
+    output_summary: "341 passed, 1 skipped, 3079 deselected, 3 warnings"
+    risk_if_not_run: ""
   - command: "cd frontend; npm.cmd run test:run"
     status: "passed"
-    output_summary: "26 files, 226 passed（前端无修改）"
+    output_summary: "26 files, 226 passed"
+    risk_if_not_run: ""
   - command: "cd frontend; npm.cmd run build"
     status: "passed"
     output_summary: "构建成功"
-  - command: "rg -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+    risk_if_not_run: ""
+  - command: "grep -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
     status: "passed"
-    output_summary: "仅允许上下文（notifier 人工下单/系统声明、skills 研究文档、goal/policy 安全规则）"
+    output_summary: "有命中但均为允许上下文、测试断言、skill 文档或历史边界；Batch C 未新增独立禁用按钮或真实执行能力"
+    risk_if_not_run: ""
+
+page_validation:
+  required: false
+  results: []
 
 financial_safety:
   no_broker_execution: true
@@ -87,39 +153,50 @@ financial_safety:
   no_broker_api: true
   no_forbidden_button_labels: true
   forbidden_label_scan:
-    command: "rg -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+    command: "grep -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
     status: "passed"
-    result: "仅允许上下文，无独立执行按钮"
+    result: "有命中但均为允许上下文、测试断言、skill 参考文档或历史边界，无 Batch C 新增独立禁用按钮或真实执行能力。分类如下：
+      - agent/src/low_absorb/notifier.py：飞书通知中使用'下单信息'描述可复制文本，附明确免责声明'系统不会自动交易'
+      - agent/src/goal/policy.py：正则匹配策略规则（研究用）
+      - agent/src/factors/、agent/src/tools/：技术指标和成交解析器
+      - agent/src/skills/**：Tushare/Elliott/Risk/ETF 等技能参考文档（非运行代码）
+      - frontend/src/components/：'复制人工下单信息'、'记录卖出'按钮（Low Absorb 允许的人工执行文案）
+      - frontend/src/pages/low-absorb/：'记录卖出'、'复制人工下单信息'（同上）
+      - frontend/src/__tests__/：FORBIDDEN_STANDALONE_LABELS 测试断言字符串
+      - frontend/src/mocks/：mock 数据中包含'券商 App'等文字说明
+    Batch C 未新增任何券商 API、自动交易、一键交易功能或独立禁用按钮。"
 
 scope_check:
   only_allowed_files_changed: true
   extra_files: []
 
-unresolved_items:
-  - "无"
+unresolved_items: []
 
 suggested_commit:
-  message: "[002] feat: Low Absorb Batch B 成本链半自动更新交付 — 候选/审核/审计/回滚 + Codex CR 修复"
+  message: "[002] feat: Batch C — daily-level backtest engine with real runs API"
   files_recommended_for_staging:
-    - "agent/src/low_absorb/cost_chain/__init__.py"
-    - "agent/src/low_absorb/cost_chain/models.py"
-    - "agent/src/low_absorb/cost_chain/updater.py"
+    - "agent/src/low_absorb/backtest/__init__.py"
+    - "agent/src/low_absorb/backtest/models.py"
+    - "agent/src/low_absorb/backtest/dataset.py"
+    - "agent/src/low_absorb/backtest/metrics.py"
+    - "agent/src/low_absorb/backtest/engine.py"
     - "agent/src/low_absorb/models.py"
     - "agent/src/low_absorb/storage.py"
-    - "agent/src/low_absorb/api/chain.py"
-    - "agent/src/low_absorb/chain_matrix.py"
-    - "agent/tests/test_low_absorb_storage.py"
-    - "agent/tests/test_low_absorb_chain_matrix.py"
-    - "agent/tests/test_low_absorb_chain_api.py"
+    - "agent/src/low_absorb/api/backtest.py"
+    - "agent/tests/test_low_absorb_backtest.py"
+    - "agent/tests/test_low_absorb_api_contract.py"
+    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
 
 notes_for_codex:
   focus:
-    - "Batch B 新建 cost_chain/ 包 + 修改 4 个模块"
-    - "CostChainModel.status = None 视为 ACTIVE（向后兼容）"
-    - "候选版本必须先 APPROVED → ACTIVE 才被 chain_matrix 消费"
-    - "rollback_to 语义：current→ROLLED_BACK, target→ACTIVE, 组件不变, config 权重同步"
-    - "approve 候选时自动降级其他 ACTIVE 版本为 ROLLED_BACK（版本互斥）"
-    - "不接真实 HTTP 采集、不新增依赖"
-    - "不修改 frontend/src/**"
+    - "回测引擎使用简化扫描漏斗：MA20 偏离、5 日量比、下影线/ATR 三个技术闸门"
+    - "回测结果通过 next-bar close 测量 forward outcome"
+    - "engine._execute() 与 engine.run() 分离，确保所有结果持久化"
   known_risks:
-    - "JsonLowAbsorbStorage 新增 candidates/audit_log 序列化字段；旧 JSON 状态文件加载时自动忽略缺失字段"
+    - "简化 exit 模型：entry=当日 close，exit=次日 close，不模拟滑点和盘中执行"
+    - "branch 归因基于 DailyBar.industry 字段"
+    - "fixture 数据仅用于测试，生产模式不得 fixture 伪装真实数据"
+  not_implemented:
+    - "分钟级 14:45、09:30-10:00、10:00 监督回测"
+    - "真实 A 股历史行情批量获取（需后续数据源配合）"
+    - "前端回测结果展示页面"

@@ -1,92 +1,60 @@
-"""Backtest API for Low Absorb — returns example snapshot data."""
+"""Backtest API for Low Absorb — daily-level real backtest engine."""
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Any
+
 from fastapi import APIRouter
+from pydantic import BaseModel
+
+from ..backtest.engine import BacktestEngine
+from ..config import LowAbsorbConfig
+from ..models import BacktestRunRequest
+from .workbench import get_workbench_storage
 
 router = APIRouter(prefix="/low-absorb/backtest", tags=["low-absorb"])
 
 
-def build_backtest_snapshot() -> dict[str, object]:
-    """Return an example backtest snapshot matching the frontend mock structure.
+def _build_engine() -> BacktestEngine:
+    """Create a BacktestEngine wired to the active storage and data provider."""
+    storage = get_workbench_storage()
+    config = storage.get_config()
+    try:
+        from ..a_stock_provider import AStockLowAbsorbProvider as Provider
+        provider: Any = Provider()
+    except Exception:
+        from ..fallback_provider import FallbackMarketDataProvider as Provider
+        provider = Provider()
+    return BacktestEngine(config=config, data_provider=provider, storage=storage)
 
-    The data mirrors LOW_ABSORB_BACKTEST_MOCK from frontend/src/mocks/lowAbsorb.ts.
-    Real backtest engine integration will replace this when connected.
-    """
+
+def build_backtest_snapshot() -> dict[str, object]:
+    """Return the backtest snapshot (kept for backward compatibility)."""
     return {
         "metrics": [
-            {"id": "win-rate", "label": "胜率", "value": "56.8%", "detail": "仅为示例统计"},
-            {"id": "avg-r", "label": "平均 R", "value": "0.42R", "detail": "未接真实回测引擎"},
-            {"id": "drawdown", "label": "最大回撤", "value": "-6.4%", "detail": "用于页面契约预览"},
-            {"id": "samples", "label": "样本数", "value": "148", "detail": "覆盖近 18 个月信号"},
-            {"id": "profit-factor", "label": "盈亏比", "value": "1.36", "detail": "按人工执行假设估算"},
-            {"id": "best-branch", "label": "最佳分支", "value": "AI 服务器", "detail": "分支归因示例"},
+            {"id": "win-rate", "label": "胜率", "value": "—", "detail": "运行真实回测后更新"},
+            {"id": "avg-r", "label": "平均 R", "value": "—", "detail": "运行真实回测后更新"},
+            {"id": "drawdown", "label": "最大回撤", "value": "—", "detail": "运行真实回测后更新"},
+            {"id": "samples", "label": "样本数", "value": "—", "detail": "运行真实回测后更新"},
         ],
         "parameters": [
-            {"id": "turnover", "label": "成交额阈值", "value": "8,000 亿", "detail": "宏观闸门下限"},
-            {"id": "limit-break", "label": "炸板率阈值", "value": "50%", "detail": "高风险情绪拦截"},
-            {"id": "ma20", "label": "MA20 偏离范围", "value": "-5% 至 +1%", "detail": "尾盘回踩过滤"},
-            {"id": "volume", "label": "量比阈值", "value": "≤ 0.85", "detail": "缩量低吸过滤"},
-            {"id": "shadow", "label": "下影线 ATR 阈值", "value": "≥ 1.0", "detail": "承接强度过滤"},
-            {"id": "alpha", "label": "10:00 Alpha 宽容", "value": "≥ 1%", "detail": "次日监督规则"},
-        ],
-        "historicalSignals": [
-            {
-                "id": "hist-1",
-                "tradeDate": "2026-05-18",
-                "stock": "601138 工业富联",
-                "branch": "AI 服务器",
-                "grade": "A",
-                "nextDayReturn": "+2.8%",
-                "maxFloatLoss": "-0.7%",
-                "finalR": "1.4R",
-                "stopHit": "否",
-            },
-            {
-                "id": "hist-2",
-                "tradeDate": "2026-05-22",
-                "stock": "603019 中科曙光",
-                "branch": "算力基础设施",
-                "grade": "B+",
-                "nextDayReturn": "+1.1%",
-                "maxFloatLoss": "-1.2%",
-                "finalR": "0.6R",
-                "stopHit": "否",
-            },
-            {
-                "id": "hist-3",
-                "tradeDate": "2026-05-29",
-                "stock": "002463 沪电股份",
-                "branch": "PCB",
-                "grade": "B",
-                "nextDayReturn": "-1.6%",
-                "maxFloatLoss": "-2.4%",
-                "finalR": "-0.8R",
-                "stopHit": "是",
-            },
-        ],
-        "sensitivity": [
-            {"id": "sen-ma20", "parameter": "MA20 偏离", "conservative": "0.31R", "base": "0.42R", "aggressive": "0.28R"},
-            {"id": "sen-volume", "parameter": "量比阈值", "conservative": "0.37R", "base": "0.42R", "aggressive": "0.33R"},
-            {"id": "sen-alpha", "parameter": "10:00 Alpha", "conservative": "0.35R", "base": "0.42R", "aggressive": "0.46R"},
-        ],
-        "branchAttribution": [
-            {"id": "attr-server", "branch": "AI 服务器", "samples": 54, "averageR": "0.62R", "contribution": "42%"},
-            {"id": "attr-cpo", "branch": "CPO", "samples": 31, "averageR": "0.38R", "contribution": "19%"},
-            {"id": "attr-pcb", "branch": "PCB", "samples": 28, "averageR": "0.21R", "contribution": "11%"},
+            {"id": "turnover", "label": "成交额阈值", "value": str(LowAbsorbConfig().min_market_turnover_cny)},
+            {"id": "ma20", "label": "MA20 偏离范围", "value": f"{LowAbsorbConfig().ma20_deviation_min} 至 {LowAbsorbConfig().ma20_deviation_max}"},
         ],
         "suggestions": [
-            "弱分支末位且斜率为负时，继续保持强拦截。",
-            "对 10:00 宽容阈值做分支级敏感性拆分。",
-            "人工成交回填缺失的样本不纳入收益统计。",
+            "通过 POST /low-absorb/backtest/runs 提交真实回测请求。",
+            "回测结果为策略研究参考，不构成投资建议和收益承诺。",
         ],
-        "message": "当前为示例回测数据，真实回测引擎接入后将自动更新。",
+        "message": "真实回测引擎已接入。使用 POST /low-absorb/backtest/runs 提交回测请求。",
     }
 
 
 @router.get("")
 def get_backtest_runs() -> dict[str, list[object]]:
-    return {"runs": []}
+    storage = get_workbench_storage()
+    runs = storage.list_backtest_runs()
+    return {"runs": [r.model_dump(mode="json") for r in runs]}
 
 
 @router.get("/summary")
@@ -95,9 +63,72 @@ def get_backtest_summary() -> dict[str, object]:
 
 
 @router.post("/run")
-def run_backtest() -> dict[str, object]:
+def run_backtest_legacy() -> dict[str, object]:
     return {
         "runId": None,
-        "status": "BACKTEST_ENGINE_NOT_CONNECTED",
-        "message": "回测引擎未接入，当前为实施例数据展示。",
+        "status": "USE_POST_RUNS",
+        "message": "请使用 POST /low-absorb/backtest/runs 提交包含 start_date、end_date、symbols 的回测请求。",
     }
+
+
+def _envelope(data: Any = None, error: str | None = None) -> dict[str, object]:
+    return {"success": error is None, "data": data, "error": error}
+
+
+class BacktestCreateRequest(BaseModel):
+    """Request body for creating a backtest run."""
+
+    start_date: str
+    end_date: str
+    symbols: list[str] | None = None
+    cost_chain_version: str = "GB200 NVL72"
+    config_snapshot_id: str | None = None
+    include_manual_fill_assumption: bool = False
+
+
+@router.post("/runs")
+def create_backtest_run(body: BacktestCreateRequest) -> dict[str, object]:
+    """Create and execute a daily-level backtest run."""
+    try:
+        parsed_start = date.fromisoformat(body.start_date)
+        parsed_end = date.fromisoformat(body.end_date)
+    except (ValueError, TypeError) as e:
+        return _envelope(error=f"日期格式无效: {e}")
+
+    request = BacktestRunRequest(
+        start_date=parsed_start,
+        end_date=parsed_end,
+        symbols=body.symbols,
+        cost_chain_version=body.cost_chain_version,
+        config_snapshot_id=body.config_snapshot_id,
+        include_manual_fill_assumption=body.include_manual_fill_assumption,
+    )
+
+    engine = _build_engine()
+    result = engine.run(request)
+
+    return _envelope(data=result.model_dump(mode="json"))
+
+
+@router.get("/runs")
+def list_backtest_runs() -> dict[str, object]:
+    """List all backtest runs."""
+    storage = get_workbench_storage()
+    runs = storage.list_backtest_runs()
+    return _envelope(data={"runs": [r.model_dump(mode="json") for r in runs]})
+
+
+@router.get("/runs/{run_id}")
+def get_backtest_run(run_id: str) -> dict[str, object]:
+    """Get a specific backtest run by ID (returns full BacktestResult if available)."""
+    storage = get_workbench_storage()
+
+    # Try full result first; fall back to run summary
+    result = storage.get_backtest_result(run_id)
+    if result is not None:
+        return _envelope(data=result.model_dump(mode="json"))
+
+    run = storage.get_backtest_run(run_id)
+    if run is None:
+        return _envelope(error=f"未找到回测任务: {run_id}")
+    return _envelope(data=run.model_dump(mode="json"))

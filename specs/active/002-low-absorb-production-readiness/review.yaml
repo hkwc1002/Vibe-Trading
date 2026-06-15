@@ -1,9 +1,9 @@
 task_id: "002-low-absorb-production-readiness"
-title: "Low Absorb 生产化与外部联调 - Batch B：成本链半自动更新"
+title: "Low Absorb 生产化与外部联调 - Batch C 第三次审查"
 reviewed_by: "Codex"
 reviewed_at: "2026-06-15"
-review_type: "pre_commit_rereview"
-review_round: 2
+review_type: "pre_commit"
+review_round: 3
 
 verdict: "APPROVED_FOR_COMMIT"
 
@@ -12,7 +12,7 @@ inputs_reviewed:
   contract_yaml: true
   implementation_yaml: true
   delivery_yaml: true
-  markdown_docs: true
+  markdown_docs: false
   git_diff: true
   validation_logs: true
   page_evidence: false
@@ -27,98 +27,126 @@ checks:
   financial_safety: "passed"
   no_unrelated_changes: "passed"
 
-review_scope:
-  batch: "Batch B / Task 2"
-  task: "成本链半自动更新"
-  allowed_source_scope_confirmed:
-    - "agent/src/low_absorb/cost_chain/**"
-    - "agent/src/low_absorb/chain_matrix.py"
-    - "agent/src/low_absorb/storage.py"
+scope_reviewed:
+  batch: "Batch C"
+  task: "T3 日线级真实回测"
+  approved_scope:
+    - "agent/src/low_absorb/backtest/**"
+    - "agent/src/low_absorb/api/backtest.py"
     - "agent/src/low_absorb/models.py"
-    - "agent/src/low_absorb/api/chain.py"
-    - "agent/tests/test_low_absorb_chain_matrix.py"
-    - "agent/tests/test_low_absorb_chain_api.py"
-    - "agent/tests/test_low_absorb_storage.py"
+    - "agent/src/low_absorb/storage.py"
+    - "agent/tests/test_low_absorb_backtest.py"
+    - "agent/tests/test_low_absorb_api_contract.py"
+    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
+    - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+    - "specs/active/002-low-absorb-production-readiness/review.yaml"
+  excluded_dirty_files:
+    - "specs/archived/001-low-absorb-next-optimization/**"
+    - ".codex/**"
+    - ".playwright-mcp/**"
+    - ".pr3-review-worktree/**"
+    - "AGENT.md"
+    - "co.sh"
+    - "low_absorb_codex_stage6_10_execution_plan.md"
+    - "specs/constitution.md"
+    - "specs/templates/**"
+  note: "工作区存在若干与 Batch C 无关的未跟踪或历史脏文件，本次批准范围不包含这些文件。"
 
-resolved_from_round_1:
-  - id: "CR-1"
-    result: "resolved"
-    note: "rollback_to 已改为 current_version -> ROLLED_BACK、target_version -> ACTIVE，且不覆盖 target_version 组件。"
-  - id: "CR-2"
-    result: "resolved"
-    note: "storage 测试已覆盖目标组件保持、当前版本退出 ACTIVE、目标版本 ACTIVE、config weights 同步、审计 before/after 方向。"
-  - id: "CR-3"
-    result: "resolved"
-    note: "API 测试已覆盖 rollback 后 snapshot 状态、目标组件保持和 audit before/after 方向。"
-  - id: "CR-4"
-    result: "resolved"
-    note: "delivery.yaml 已更新为 CR 修复后证据，移除 rollback 未解决风险，并记录 rg 金融安全扫描。"
+previous_review_resolution:
+  round_1:
+    CR-1_full_backtest_result_persistence: "fixed"
+    CR-2_json_storage_roundtrip: "fixed"
+    CR-3_get_run_detail_returns_full_result: "fixed"
+    CR-4_failed_run_error_persisted: "fixed"
+    CR-5_sensitivity_main_flow: "fixed"
+    CR-6_delivery_financial_scan_evidence: "fixed"
+  round_2:
+    CR-1_run_id_collision: "fixed"
+    CR-2_run_id_uniqueness_tests: "fixed"
+    CR-3_delivery_targeted_test_count: "fixed_for_targeted_count"
 
-delivery_validation_accepted:
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py agent/tests/test_low_absorb_storage.py -q"
-    status: "passed"
-    output_summary: "Codex 复跑通过：71 passed, 1 warning"
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
-    status: "reported_passed"
-    output_summary: "delivery.yaml 记录 297 passed, 1 skipped"
-  - command: "cd frontend; npm.cmd run test:run"
-    status: "reported_passed"
-    output_summary: "delivery.yaml 记录 26 files, 226 passed"
-  - command: "cd frontend; npm.cmd run build"
-    status: "reported_passed"
-    output_summary: "delivery.yaml 记录构建成功"
-  - command: "rg -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
-    status: "reported_passed"
-    output_summary: "delivery.yaml 记录仅允许上下文，无独立执行按钮"
+validation:
+  codex_reran:
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_backtest.py agent/tests/test_low_absorb_api_contract.py -q"
+      status: "passed"
+      output_summary: "59 passed, 1 warning"
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -c \"from src.low_absorb.backtest.engine import _make_run_id; ids=[_make_run_id() for _ in range(1000)]; print(len(ids), len(set(ids)), ids[:2])\""
+      status: "passed"
+      output_summary: "1000 generated, 1000 unique"
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+      status: "passed"
+      output_summary: "341 passed, 1 skipped, 3079 deselected, 3 warnings"
+    - command: "rg -n \"券商|自动交易|一键交易|买入|卖出|下单|broker|order|execution|auto trading\" agent\\src\\low_absorb\\backtest agent\\src\\low_absorb\\api\\backtest.py agent\\tests\\test_low_absorb_backtest.py agent\\tests\\test_low_absorb_api_contract.py"
+      status: "passed"
+      output_summary: "仅命中回测引擎免责声明和测试类名 execution；未发现真实交易执行、券商 API、自动交易或禁用独立按钮。"
+  delivery_accepted:
+    - command: "pytest agent/tests/test_low_absorb_backtest.py agent/tests/test_low_absorb_api_contract.py -q"
+      status: "passed"
+      output_summary: "delivery.yaml 记录 59 passed，与 Codex 复跑一致。"
+    - command: "pytest agent/tests -k low_absorb -q"
+      status: "passed_with_note"
+      output_summary: "delivery.yaml 记录 338 passed；Codex 复跑为 341 passed，差异来自新增 3 个 run_id 测试，非阻断。"
+    - command: "cd frontend; npm.cmd run test:run"
+      status: "reported_passed"
+      output_summary: "delivery.yaml 记录 226 passed；本轮未修改 frontend/src，Codex 未复跑。"
+    - command: "cd frontend; npm.cmd run build"
+      status: "reported_passed"
+      output_summary: "delivery.yaml 记录构建成功；本轮未修改 frontend/src，Codex 未复跑。"
 
-codex_spot_checks:
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -c \"... rollback_to('GB300 NVL72','GB200 NVL72') ...\""
-    status: "passed"
-    output_summary: "GB200 初始权重 0.3864、GB300 初始权重 0.4200；回滚后 GB200 权重仍为 0.3864，GB200.status=ACTIVE，GB300.status=ROLLED_BACK，审计 before=GB300 NVL72、after=GB200 NVL72。"
+spot_checks:
+  - id: "SC-1"
+    file: "agent/src/low_absorb/backtest/engine.py"
+    result: "passed"
+    note: "_make_run_id() 已改为秒级时间戳 + uuid4 16 位后缀；Codex 独立复查 1000 次无碰撞。"
+  - id: "SC-2"
+    file: "agent/src/low_absorb/storage.py"
+    result: "passed"
+    note: "InMemory/Json 存储均包含 backtest_runs 和 backtest_results，且超 50 条时同步清理 run/result。"
+  - id: "SC-3"
+    file: "agent/src/low_absorb/api/backtest.py"
+    result: "passed"
+    note: "GET /runs/{id} 优先返回完整 BacktestResult，缺失时回退 BacktestRun 摘要。"
+  - id: "SC-4"
+    file: "agent/tests/test_low_absorb_backtest.py"
+    result: "passed"
+    note: "已覆盖 JSON roundtrip、失败 error、完整详情、敏感性非空、run_id 唯一性和多次运行不覆盖。"
 
 findings:
   critical: []
   high: []
-  medium:
-    - id: "M1"
-      file: "agent/src/low_absorb/storage.py"
-      line: 223
-      issue: "approve 候选时会把 status=None 或 ACTIVE 的其他成本链版本全部标记为 ROLLED_BACK，包括内置 GB200/GB300/custom/manual。"
-      impact: "这符合本轮“版本互斥”的实现选择，但后续若需要保留多个内置版本作为可选基准，应引入单独 active_cost_chain_version 指针，而不是把非当前版本都写为 ROLLED_BACK。当前不阻断 Batch B。"
-      recommendation: "后续 Batch 或成本链 UI 需求中明确版本状态与可选基准版本的关系。"
+  medium: []
   low:
     - id: "L1"
-      file: "agent/src/low_absorb/api/chain.py"
-      line: 83
-      issue: "新增 Batch B API 直接返回 Pydantic 对象/list，与 contract 中全局 API 响应格式统一要求存在历史不一致。"
-      impact: "该文件此前 snapshot API 已采用直接对象返回，本轮未扩大该风格；不阻断当前 Batch。后续可单独做 API envelope 统一。"
-      recommendation: "在后续 API 契约治理中统一 Low Absorb API envelope。"
+      file: "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+      issue: "Low Absorb 全量回归计数仍写 338 passed；Codex 复跑为 341 passed。"
+      impact: "不影响功能或提交判断；定向测试计数已经更新为 59 passed，关键修复证据完整。"
+      recommendation: "后续若再更新 delivery.yaml，可同步改为 341 passed。"
 
 changes_requested: []
 
 approved_for_commit:
   allowed_files:
-    - "agent/src/low_absorb/cost_chain/__init__.py"
-    - "agent/src/low_absorb/cost_chain/models.py"
-    - "agent/src/low_absorb/cost_chain/updater.py"
+    - "agent/src/low_absorb/backtest/__init__.py"
+    - "agent/src/low_absorb/backtest/models.py"
+    - "agent/src/low_absorb/backtest/dataset.py"
+    - "agent/src/low_absorb/backtest/metrics.py"
+    - "agent/src/low_absorb/backtest/engine.py"
     - "agent/src/low_absorb/models.py"
     - "agent/src/low_absorb/storage.py"
-    - "agent/src/low_absorb/api/chain.py"
-    - "agent/src/low_absorb/chain_matrix.py"
-    - "agent/tests/test_low_absorb_storage.py"
-    - "agent/tests/test_low_absorb_chain_matrix.py"
-    - "agent/tests/test_low_absorb_chain_api.py"
+    - "agent/src/low_absorb/api/backtest.py"
+    - "agent/tests/test_low_absorb_backtest.py"
+    - "agent/tests/test_low_absorb_api_contract.py"
     - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
     - "specs/active/002-low-absorb-production-readiness/review.yaml"
   forbidden_files:
     - "*"
-  commit_message: "[002] feat: Low Absorb Batch B cost-chain review workflow"
-  draft_pr_title: "[002] feat: Low Absorb Batch B cost-chain semi-automated updates"
+  commit_message: "[002] feat: Batch C daily-level backtest engine"
+  draft_pr_title: "[002] feat: Low Absorb Batch C daily-level backtest engine"
   draft_pr_notes:
-    - "只允许暂存 approved_for_commit.allowed_files 中列出的文件。"
-    - "工作区存在其他 modified/untracked 文件，不在本次批准范围内。"
-    - "禁止 git add .、git add -A、git commit -am。"
+    - "仅允许精确暂存 approved_for_commit.allowed_files 中列出的文件。"
+    - "禁止暂存工作区中的 archived specs、.codex、.playwright-mcp、AGENT.md、co.sh、constitution/templates 等无关脏文件。"
+    - "提交前必须执行 git diff --cached --name-only，确认只包含 allowed_files。"
 
 git_safety:
   user_authorization_required: true
@@ -129,6 +157,6 @@ git_safety:
     - "git commit -am"
   required_pre_commit_check:
     - "git diff --cached --name-only 必须只包含 approved_for_commit.allowed_files。"
-    - "不得暂存 specs/archived/**、.codex/**、.playwright-mcp/**、.pr3-review-worktree/**、AGENT.md、co.sh、low_absorb_codex_stage6_10_execution_plan.md、specs/constitution.md、specs/templates/** 等非本轮批准文件。"
+    - "若版本操作前又产生新改动，必须重新请求 Codex 审查。"
 
-summary: "Batch B 复审通过，可以进入用户授权后的提交阶段。上轮 rollback 阻断项已修复：回滚后 target_version 组件保持不变并恢复 ACTIVE，current_version 标记为 ROLLED_BACK，config weights 同步到 target，审计 before/after 方向正确；Codex 只读语义检查和 Batch B 专用测试复跑均通过。前端测试、构建、Low Absorb 全量回归和金融安全扫描采用 delivery.yaml 证据。本次批准仅限 allowed_files 精确文件清单，不允许暂存工作区其他变更。"
+summary: "Batch C 第三次审查通过，结论为 APPROVED_FOR_COMMIT。上轮 run_id 高频碰撞问题已修复为 uuid4 后缀方案，Codex 独立复查 1000 次生成均唯一；定向测试 59 passed，Low Absorb 后端全量回归 341 passed, 1 skipped。完整 BacktestResult 持久化、JSON roundtrip、详情接口、失败 error、敏感性分析和 run_id 不覆盖测试均已覆盖。未发现新增券商 API、自动交易、真实下单或禁用独立按钮风险。版本阶段只能精确暂存 allowed_files，工作区其他脏文件不得纳入本次提交。"

@@ -354,3 +354,67 @@ class FeishuNotificationResult(LowAbsorbBaseModel):
     error: str | None = None
     sent: bool = False
     message: str = Field(default="", min_length=0)
+
+
+# ── Backtest models ───────────────────────────────────────────────────────
+
+BACKTEST_RUN_STATUSES = ("QUEUED", "RUNNING", "SUCCEEDED", "FAILED")
+"""Allowed BacktestRun statuses."""
+
+
+class BacktestRunRequest(LowAbsorbBaseModel):
+    """Request to run a daily-level backtest."""
+
+    start_date: date
+    end_date: date
+    symbols: list[str] | None = None
+    cost_chain_version: str = Field(default="GB200 NVL72", min_length=1)
+    config_snapshot_id: str | None = None
+    include_manual_fill_assumption: bool = False
+
+
+class BacktestRun(LowAbsorbBaseModel):
+    """A single backtest run with lifecycle status."""
+
+    run_id: str = Field(..., min_length=1)
+    request: BacktestRunRequest
+    status: str = Field(default="QUEUED", pattern="^(QUEUED|RUNNING|SUCCEEDED|FAILED)$")
+    created_at: datetime = Field(default_factory=datetime.now)
+    finished_at: datetime | None = None
+    error: str | None = None
+
+
+class BacktestBranchAttribution(LowAbsorbBaseModel):
+    """Per-branch contribution to overall backtest performance."""
+
+    branch: str
+    sample_count: int = Field(..., ge=0)
+    average_r: Decimal
+    contribution_pct: Decimal = Field(..., ge=0, le=1)
+
+
+class BacktestSensitivityRow(LowAbsorbBaseModel):
+    """Sensitivity analysis for a single parameter variant."""
+
+    parameter: str
+    base: Decimal
+    variant: Decimal
+    description: str = ""
+
+
+class BacktestResult(LowAbsorbBaseModel):
+    """Complete backtest result with metrics and attribution."""
+
+    run_id: str = Field(..., min_length=1)
+    status: str = "SUCCEEDED"
+    error: str | None = None
+    data_sources: list[str] = Field(default_factory=lambda: ["fixture"])
+    sample_count: int = Field(default=0, ge=0)
+    signal_count: int = Field(default=0, ge=0)
+    plan_count: int = Field(default=0, ge=0)
+    win_rate: Decimal = Field(default=Decimal("0"), ge=0, le=1)
+    average_r: Decimal = Decimal("0")
+    max_drawdown: Decimal = Decimal("0")
+    branch_attribution: list[BacktestBranchAttribution] = Field(default_factory=list)
+    sensitivity: list[BacktestSensitivityRow] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
