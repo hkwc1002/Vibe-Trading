@@ -41,9 +41,6 @@ self_review:
   completed: true
   findings:
     - severity: "medium"
-      issue: "BaiduSinaAdapter 硬编码日期，后续优化"
-      fix_status: "not_fixed"
-    - severity: "medium"
       issue: "GlobalQualityProvider __import__ 延迟导入，建议模块级 import"
       fix_status: "not_fixed"
   revalidated_after_fixes: true

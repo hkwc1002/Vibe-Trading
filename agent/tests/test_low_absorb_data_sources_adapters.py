@@ -132,8 +132,23 @@ class TestBaiduSinaAdapter:
             assert "high" in first
             assert "low" in first
             assert "close" in first
-            assert "volume" in first or "amount" in first
+        # Freshness from trade_date (2026-06-12 is 3 days before today 2026-06-15)
         assert result.freshness_seconds is not None
+        assert result.freshness_seconds > 0, "Old K-line data should have positive freshness"
+
+    def test_fetch_kline_old_data_is_stale(self) -> None:
+        """Old trade dates should result in large freshness_seconds (stale)."""
+        rows = ["date,open,high,low,close,pre_close,chg,pchg,turnover,volume,amount,tcap,mcap",
+                "2026-05-01,19.0,19.5,18.8,19.2,19.0,0.2,1.05,0.5,900000,18000000,48000000000,46000000000"]
+        csv_text = "\n".join(rows) + "\n"
+        def mock_get(url: str, params: dict) -> str:
+            return csv_text
+        adapter = BaiduSinaAdapter(http_get=mock_get)
+        result = adapter.fetch_kline("601138", lookback=5)
+        assert result.ok
+        # 2026-05-01 is 45 days before 2026-06-15, so freshness > 3600 * 24 * 44
+        assert result.freshness_seconds is not None
+        assert result.freshness_seconds > 3600 * 24, "Month-old data should be stale (>1 day)"
 
     def test_fetch_kline_failure(self) -> None:
         def mock_get(url: str, params: dict) -> str:

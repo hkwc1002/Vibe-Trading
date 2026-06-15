@@ -247,10 +247,23 @@ class TestQualityReflectsFetch:
         assert reason is not None
 
     def test_quality_true_after_healthy_fetch(self) -> None:
-        """After healthy fetch, check_data_quality returns True."""
         def make_adapter(source_id: str):
             return MockAdapter(AdapterResult(ok=True, selected_source=source_id, data={"close": "20.50"}, returned_rows=1))
         orch = AShareOrchestrator(adapter_factory=make_adapter)
         orch.fetch_quote("601138")
         ok, _ = orch.check_data_quality()
         assert ok is True
+
+    def test_conflict_with_tencent_style_output(self) -> None:
+        def make_adapter(source_id: str):
+            if source_id == "mootdx":
+                return MockAdapter(AdapterResult(ok=True, selected_source=source_id, data={"close": "20.50", "price": "20.50"}, returned_rows=1))
+            if source_id == "tencent":
+                return MockAdapter(AdapterResult(ok=True, selected_source=source_id, data={"close": 22.00, "price": 22.00, "open": 21.80, "high": 22.20}, returned_rows=1))
+            return MockAdapter(AdapterResult(ok=False))
+        orch = AShareOrchestrator(adapter_factory=make_adapter, conflict_tolerance_pct=Decimal("0.02"))
+        result = orch.fetch_quote("601138")
+        assert result.ok is False
+        assert len(result.conflicts) > 0
+        assert any("close" in c.field or "price" in c.field for c in result.conflicts)
+        assert "conflict" in result.fail_closed_reason.lower()

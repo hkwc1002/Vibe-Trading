@@ -225,7 +225,17 @@ class BaiduSinaAdapter(BaseAdapter):
                         row[fn] = vals[i] if i < len(vals) else ""
                     data_rows.append(row)
             result_rows = data_rows[-lookback:] if data_rows else []
-            freshness = int(time_module.time() - start) if result_rows else None
+            # CR-1: freshness from latest trade_date, not request latency
+            freshness: int | None = None
+            if result_rows:
+                lt = result_rows[-1].get("trade_date", "")
+                if lt:
+                    try:
+                        from datetime import datetime as dt
+                        market_close = dt.strptime(str(lt), "%Y-%m-%d").replace(hour=15, minute=0, second=0)
+                        freshness = max(0, int(time_module.time() - market_close.timestamp()))
+                    except (ValueError, OSError, TypeError):
+                        freshness = None
             return AdapterResult(
                 ok=len(result_rows) > 0, selected_source="baidu_sina",
                 latency_ms=latency, data=result_rows,
