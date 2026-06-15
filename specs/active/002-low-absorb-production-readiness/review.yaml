@@ -1,14 +1,14 @@
 task_id: "002-low-absorb-production-readiness"
-title: "Low Absorb 生产化与外部联调 - Batch A：多源行情稳定性"
+title: "Low Absorb 生产化与外部联调 - Batch B：成本链半自动更新"
 reviewed_by: "Codex"
 reviewed_at: "2026-06-15"
-review_type: "pre_commit"
-review_round: 5
+review_type: "pre_commit_rereview"
+review_round: 2
 
 verdict: "APPROVED_FOR_COMMIT"
 
 inputs_reviewed:
-  brief_md: true
+  brief_md: false
   contract_yaml: true
   implementation_yaml: true
   delivery_yaml: true
@@ -27,106 +27,98 @@ checks:
   financial_safety: "passed"
   no_unrelated_changes: "passed"
 
-resolved_from_round_4:
-  - id: "R4-CR1"
-    result: "resolved"
-    note: "AShareOrchestrator 已新增 _last_fetch_result，fetch_quote/fetch_kline 会记录最近一次 MultiSourceFetchResult；check_data_quality() 会检查 ok、conflicts、freshness_seconds 和 fail_closed_reason。"
-  - id: "R4-CR2"
-    result: "resolved"
-    note: "scanner 在注入 data_source_orchestrator 且质量失败时默认返回空 signals/trade_plans；新增 stale 质量异常测试。"
-  - id: "R4-CR3"
-    result: "resolved"
-    note: "sentiment 在注入 orchestrator 且质量失败时会将 a_share_quality_ok 推导为 false；新增 stale/fail_closed 许可拦截测试。"
-  - id: "R4-CR4"
-    result: "resolved"
-    note: "delivery.yaml 已更新为第五轮修复说明，并记录 256 个 Low Absorb 后端测试通过。"
+review_scope:
+  batch: "Batch B / Task 2"
+  task: "成本链半自动更新"
+  allowed_source_scope_confirmed:
+    - "agent/src/low_absorb/cost_chain/**"
+    - "agent/src/low_absorb/chain_matrix.py"
+    - "agent/src/low_absorb/storage.py"
+    - "agent/src/low_absorb/models.py"
+    - "agent/src/low_absorb/api/chain.py"
+    - "agent/tests/test_low_absorb_chain_matrix.py"
+    - "agent/tests/test_low_absorb_chain_api.py"
+    - "agent/tests/test_low_absorb_storage.py"
 
-verification_performed_by_codex:
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_data_sources_orchestrator.py agent/tests/test_low_absorb_scanner.py agent/tests/test_low_absorb_sentiment.py -q"
-    status: "passed"
-    output_summary: "67 passed in 0.27s"
-  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
-    status: "passed"
-    output_summary: "256 passed, 1 skipped, 3079 deselected, 3 warnings"
+resolved_from_round_1:
+  - id: "CR-1"
+    result: "resolved"
+    note: "rollback_to 已改为 current_version -> ROLLED_BACK、target_version -> ACTIVE，且不覆盖 target_version 组件。"
+  - id: "CR-2"
+    result: "resolved"
+    note: "storage 测试已覆盖目标组件保持、当前版本退出 ACTIVE、目标版本 ACTIVE、config weights 同步、审计 before/after 方向。"
+  - id: "CR-3"
+    result: "resolved"
+    note: "API 测试已覆盖 rollback 后 snapshot 状态、目标组件保持和 audit before/after 方向。"
+  - id: "CR-4"
+    result: "resolved"
+    note: "delivery.yaml 已更新为 CR 修复后证据，移除 rollback 未解决风险，并记录 rg 金融安全扫描。"
 
 delivery_validation_accepted:
-  - command: "pytest agent/tests -k low_absorb -q"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_chain_matrix.py agent/tests/test_low_absorb_chain_api.py agent/tests/test_low_absorb_storage.py -q"
     status: "passed"
-    output_summary: "delivery.yaml 记录 256 passed, 1 skipped"
+    output_summary: "Codex 复跑通过：71 passed, 1 warning"
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
+    status: "reported_passed"
+    output_summary: "delivery.yaml 记录 297 passed, 1 skipped"
   - command: "cd frontend; npm.cmd run test:run"
-    status: "passed"
+    status: "reported_passed"
     output_summary: "delivery.yaml 记录 26 files, 226 passed"
   - command: "cd frontend; npm.cmd run build"
-    status: "passed"
+    status: "reported_passed"
     output_summary: "delivery.yaml 记录构建成功"
-  - command: "rg forbidden trading labels"
-    status: "passed"
+  - command: "rg -rn \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+    status: "reported_passed"
     output_summary: "delivery.yaml 记录仅允许上下文，无独立执行按钮"
+
+codex_spot_checks:
+  - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -c \"... rollback_to('GB300 NVL72','GB200 NVL72') ...\""
+    status: "passed"
+    output_summary: "GB200 初始权重 0.3864、GB300 初始权重 0.4200；回滚后 GB200 权重仍为 0.3864，GB200.status=ACTIVE，GB300.status=ROLLED_BACK，审计 before=GB300 NVL72、after=GB200 NVL72。"
 
 findings:
   critical: []
   high: []
   medium:
     - id: "M1"
-      file: "agent/src/low_absorb/api/workbench.py"
-      line: 377
-      issue: "POST /low-absorb/scan-tail 当前仍通过 MarketDataProvider 路径运行 LowAbsorbScanner，没有注入 data_source_orchestrator。"
-      impact: "本轮第四轮阻断项要求的 scanner/sentiment 质量注入路径已在类层和测试层闭环；主 scan-tail API 目前依赖 AStockLowAbsorbProvider/FallbackMarketDataProvider 自身的 fail-closed 逻辑。该分层可以接受进入提交，但后续 Batch A/B 或生产化联调应统一主 API 的数据质量来源，避免两个质量通道长期并存。"
-      blocking: false
-    - id: "M2"
-      file: "agent/src/low_absorb/data_sources/a_share_orchestrator.py"
-      line: 90
-      issue: "check_data_quality() 在没有任何 last fetch 时会回退到 source availability 判断。"
-      impact: "当前作为健康预检可接受；如果后续将其作为生产 scan-tail 唯一准入门，应增加“无最近 fetch 结果则不允许生成交易建议”的严格模式或按 trade_date/at 绑定质量快照。"
-      blocking: false
+      file: "agent/src/low_absorb/storage.py"
+      line: 223
+      issue: "approve 候选时会把 status=None 或 ACTIVE 的其他成本链版本全部标记为 ROLLED_BACK，包括内置 GB200/GB300/custom/manual。"
+      impact: "这符合本轮“版本互斥”的实现选择，但后续若需要保留多个内置版本作为可选基准，应引入单独 active_cost_chain_version 指针，而不是把非当前版本都写为 ROLLED_BACK。当前不阻断 Batch B。"
+      recommendation: "后续 Batch 或成本链 UI 需求中明确版本状态与可选基准版本的关系。"
   low:
     - id: "L1"
-      file: "specs/active/002-low-absorb-production-readiness/delivery.yaml"
-      line: 1
-      issue: "delivery.yaml 和部分源码注释在当前终端显示存在编码乱码。"
-      impact: "不影响本轮代码行为和测试结论；后续可单独进行文档/编码显示治理。"
-      blocking: false
+      file: "agent/src/low_absorb/api/chain.py"
+      line: 83
+      issue: "新增 Batch B API 直接返回 Pydantic 对象/list，与 contract 中全局 API 响应格式统一要求存在历史不一致。"
+      impact: "该文件此前 snapshot API 已采用直接对象返回，本轮未扩大该风格；不阻断当前 Batch。后续可单独做 API envelope 统一。"
+      recommendation: "在后续 API 契约治理中统一 Low Absorb API envelope。"
 
 changes_requested: []
 
 approved_for_commit:
   allowed_files:
-    - "agent/src/low_absorb/api/__init__.py"
-    - "agent/src/low_absorb/api/data_sources.py"
-    - "agent/src/low_absorb/config.py"
-    - "agent/src/low_absorb/data_sources/__init__.py"
-    - "agent/src/low_absorb/data_sources/a_share_adapters.py"
-    - "agent/src/low_absorb/data_sources/a_share_orchestrator.py"
-    - "agent/src/low_absorb/data_sources/global_provider.py"
-    - "agent/src/low_absorb/data_sources/health.py"
-    - "agent/src/low_absorb/data_sources/models.py"
-    - "agent/src/low_absorb/scanner.py"
-    - "agent/src/low_absorb/sentiment.py"
-    - "agent/tests/test_low_absorb_api_contract.py"
-    - "agent/tests/test_low_absorb_data_sources_adapters.py"
-    - "agent/tests/test_low_absorb_data_sources_global_provider.py"
-    - "agent/tests/test_low_absorb_data_sources_health.py"
-    - "agent/tests/test_low_absorb_data_sources_models.py"
-    - "agent/tests/test_low_absorb_data_sources_orchestrator.py"
-    - "agent/tests/test_low_absorb_scanner.py"
-    - "agent/tests/test_low_absorb_sentiment.py"
-    - "specs/active/002-low-absorb-production-readiness/brief.md"
-    - "specs/active/002-low-absorb-production-readiness/contract.yaml"
-    - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+    - "agent/src/low_absorb/cost_chain/__init__.py"
+    - "agent/src/low_absorb/cost_chain/models.py"
+    - "agent/src/low_absorb/cost_chain/updater.py"
+    - "agent/src/low_absorb/models.py"
+    - "agent/src/low_absorb/storage.py"
+    - "agent/src/low_absorb/api/chain.py"
+    - "agent/src/low_absorb/chain_matrix.py"
+    - "agent/tests/test_low_absorb_storage.py"
+    - "agent/tests/test_low_absorb_chain_matrix.py"
+    - "agent/tests/test_low_absorb_chain_api.py"
     - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
-    - "specs/active/002-low-absorb-production-readiness/plan.md"
+    - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
     - "specs/active/002-low-absorb-production-readiness/review.yaml"
-    - "specs/active/002-low-absorb-production-readiness/spec.md"
-    - "specs/active/002-low-absorb-production-readiness/tasks.md"
   forbidden_files:
     - "*"
-  commit_message: "feat(low-absorb): add production data source stability batch"
-  draft_pr_title: "[002] feat: Low Absorb Batch A data source stability"
+  commit_message: "[002] feat: Low Absorb Batch B cost-chain review workflow"
+  draft_pr_title: "[002] feat: Low Absorb Batch B cost-chain semi-automated updates"
   draft_pr_notes:
-    - "仅允许暂存 allowed_files 中列出的文件。"
-    - "工作区存在其他未跟踪或已修改文件，不在本次批准范围内。"
+    - "只允许暂存 approved_for_commit.allowed_files 中列出的文件。"
+    - "工作区存在其他 modified/untracked 文件，不在本次批准范围内。"
     - "禁止 git add .、git add -A、git commit -am。"
-    - "提交前必须执行 git diff --cached --name-only 并确认只包含 allowed_files。"
 
 git_safety:
   user_authorization_required: true
@@ -137,6 +129,6 @@ git_safety:
     - "git commit -am"
   required_pre_commit_check:
     - "git diff --cached --name-only 必须只包含 approved_for_commit.allowed_files。"
-    - "不得暂存 specs/archived/**、.codex/**、.playwright-mcp/**、.pr3-review-worktree/**、AGENT.md、co.sh、low_absorb_codex_stage6_10_execution_plan.md 等非本轮批准文件。"
+    - "不得暂存 specs/archived/**、.codex/**、.playwright-mcp/**、.pr3-review-worktree/**、AGENT.md、co.sh、low_absorb_codex_stage6_10_execution_plan.md、specs/constitution.md、specs/templates/** 等非本轮批准文件。"
 
-summary: "第五轮审查通过，可以进入用户授权后的提交阶段。第四轮阻断项已闭环：check_data_quality() 已消费最近一次 fetch 质量结果，scanner/sentiment 的 fail-closed 注入路径已有测试覆盖，Codex 本地复跑关键测试 67 passed，并复跑 Low Absorb 后端全量回归 256 passed, 1 skipped。前端测试和构建采用 delivery.yaml 证据。本次批准仅限 allowed_files 精确文件清单，不允许暂存其他工作区变更。"
+summary: "Batch B 复审通过，可以进入用户授权后的提交阶段。上轮 rollback 阻断项已修复：回滚后 target_version 组件保持不变并恢复 ACTIVE，current_version 标记为 ROLLED_BACK，config weights 同步到 target，审计 before/after 方向正确；Codex 只读语义检查和 Batch B 专用测试复跑均通过。前端测试、构建、Low Absorb 全量回归和金融安全扫描采用 delivery.yaml 证据。本次批准仅限 allowed_files 精确文件清单，不允许暂存工作区其他变更。"

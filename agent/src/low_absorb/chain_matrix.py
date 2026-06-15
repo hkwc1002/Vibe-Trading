@@ -258,12 +258,24 @@ def default_cost_chain_models() -> dict[str, CostChainModel]:
     return {model.version: model for model in (gb200, gb300, manual)}
 
 
+def _is_active(model: CostChainModel | None) -> bool:
+    """Check if a model is ACTIVE (status None or 'ACTIVE' for backward compat)."""
+    if model is None:
+        return False
+    if model.status is None or model.status == "ACTIVE":
+        return True
+    return False
+
+
 def cost_signal_weight_for_sector(sector: str, config: LowAbsorbConfig, model: CostChainModel | None = None) -> Decimal:
     normalized = normalize_chain_sector(sector)
     if normalized in config.chain_cost_signal_weights:
         return Decimal(config.chain_cost_signal_weights[normalized])
-    component = next((item for item in (model.components if model else []) if item.related_sector == normalized), None)
-    return component.signal_weight if component else Decimal("0")
+    # Only consume component weights from ACTIVE models
+    if model is not None and _is_active(model):
+        component = next((item for item in model.components if item.related_sector == normalized), None)
+        return component.signal_weight if component else Decimal("0")
+    return Decimal("0")
 
 
 def branch_strength_for_sector(sector: str, branches: list[ChainBranchStrength]) -> Decimal:
