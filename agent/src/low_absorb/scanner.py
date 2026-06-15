@@ -5,10 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .data_sources.a_share_orchestrator import AShareOrchestrator
 
 from .chain_matrix import (
     branch_strength_for_sector,
@@ -64,10 +60,9 @@ _FRESHNESS_MIN = Decimal("0.5")
 class LowAbsorbScanner:
     """Coordinates backend-only strategy gates before signal creation."""
 
-    def __init__(self, data_provider: MarketDataProvider, config: LowAbsorbConfig | None = None, data_source_orchestrator: AShareOrchestrator | None = None) -> None:
+    def __init__(self, data_provider: MarketDataProvider, config: LowAbsorbConfig | None = None) -> None:
         self._data_provider = data_provider
         self._config = config or LowAbsorbConfig()
-        self._orchestrator = data_source_orchestrator
 
     def scan_tail_session(
         self,
@@ -86,7 +81,6 @@ class LowAbsorbScanner:
         *,
         at: datetime | None = None,
         symbols: list[str] | None = None,
-        data_quality_ok: bool | None = None,
     ) -> ScanTailResult:
         """Run the 14:45 funnel and return manual trade plans.
 
@@ -95,17 +89,6 @@ class LowAbsorbScanner:
         """
 
         scan_at = at or _scan_at(trade_date, self._config)
-
-        # CR-2: Auto data quality check when orchestrator is provided
-        if data_quality_ok is None and self._orchestrator is not None:
-            q_ok, q_reason = self._orchestrator.check_data_quality()
-            if not q_ok:
-                data_quality_ok = False
-
-        # CR-3: Data quality fail-closed gate
-        if data_quality_ok is False:
-            return ScanTailResult(signals=[], trade_plans=[])
-
         breadth = self._data_provider.get_market_breadth(trade_date, scan_at)
         if not market_breadth_gate_passed(breadth, config=self._config, at=scan_at):
             return ScanTailResult(signals=[], trade_plans=[])

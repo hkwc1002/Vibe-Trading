@@ -55,32 +55,3 @@ def test_notify_test_handles_missing_webhook_gracefully(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["ok"] is False
     assert response.json()["error"] == "missing webhook"
-
-
-def test_data_sources_status_returns_health() -> None:
-    client = _client()
-    response = client.get("/low-absorb/data-sources/status")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert "sources" in body["data"]
-    assert "summary" in body["data"]
-    assert body["data"]["summary"]["total_sources"] >= 1
-
-
-def test_data_sources_check_returns_checked_at() -> None:
-    client = _client()
-    response = client.post("/low-absorb/data-sources/check")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert "checked_at" in body["data"]
-
-
-def test_data_sources_attempts_returns_list() -> None:
-    client = _client()
-    response = client.get("/low-absorb/data-sources/attempts")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert isinstance(body["data"]["attempts"], list)

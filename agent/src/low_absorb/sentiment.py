@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
 from .config import LowAbsorbConfig
 from .data_provider import MarketBreadth
 from .models import SentimentSnapshot
-
-if TYPE_CHECKING:
-    from .data_sources.a_share_orchestrator import AShareOrchestrator
 
 
 def macro_gate_passed(snapshot: SentimentSnapshot | None) -> bool:
@@ -87,9 +84,6 @@ def build_sentiment_permission_snapshot(
     a_share_limit_break_rate: Decimal | None = None,
     a_share_advance_count: int | None = None,
     a_share_decline_count: int | None = None,
-    a_share_quality_ok: bool | None = None,
-    global_quality_ok: bool | None = None,
-    orchestrator: AShareOrchestrator | None = None,
 ) -> dict[str, object]:
     """Return a trading-permission view for the sentiment dashboard.
 
@@ -99,12 +93,6 @@ def build_sentiment_permission_snapshot(
     overseas data can never yield a false "允许".
     """
     config = config or LowAbsorbConfig()
-
-    # ── CR-3: Auto-derive quality from orchestrator if not manually set ──
-    if orchestrator is not None:
-        if a_share_quality_ok is None:
-            q_ok, _q_reason = orchestrator.check_data_quality()
-            a_share_quality_ok = q_ok
 
     # ── Resolve A-share inputs ──
     # When the caller provides global_risk_appetite (real-data path) but
@@ -141,15 +129,7 @@ def build_sentiment_permission_snapshot(
         global_detail = global_risk_error or "全球行情数据不可用，无法评估风险偏好。"
 
     # ── Compute overall permission ──
-    # Data quality override: if explicit unhealthy data, force fail-closed
-    if a_share_quality_ok is False or global_quality_ok is False:
-        blocked: list[str] = []
-        if a_share_quality_ok is False:
-            blocked.append("A 股数据源健康检查未通过（数据缺失、过期或全部来源失败）")
-        if global_quality_ok is False:
-            blocked.append("全球行情数据源健康检查未通过（数据缺失、过期或全部来源失败）")
-        status = "拦截"
-    elif a_share_data_missing:
+    if a_share_data_missing:
         status = "拦截"
         blocked = ["A 股行情数据不可用，无法判断市场宽度闸门"]
     elif not a_share_ok:
