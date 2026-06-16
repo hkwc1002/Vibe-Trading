@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { lowAbsorbApi } from "@/lib/lowAbsorbApi";
+import { formatCnyYi, formatPctDecimal } from "@/lib/lowAbsorbFormat";
 import type { LowAbsorbSentimentGauge, LowAbsorbSentimentSnapshot } from "@/types/lowAbsorb";
 import { LowAbsorbPageShell } from "./shared";
 
@@ -32,6 +33,13 @@ const FALLBACK_SENTIMENT: LowAbsorbSentimentSnapshot = {
   newsEvents: [],
 };
 
+function formatPanelValue(panel: LowAbsorbSentimentSnapshot["instrumentPanels"][number]) {
+  if (panel.value === "—") return "—";
+  if (panel.id === "market_turnover") return formatCnyYi(panel.value);
+  if (panel.id === "limit_break") return formatPctDecimal(panel.value);
+  return String(panel.value);
+}
+
 function Gauge({ gauge }: { gauge: LowAbsorbSentimentGauge }) {
   const score = Math.max(0, Math.min(100, Number(gauge.score)));
   return (
@@ -50,7 +58,7 @@ function Gauge({ gauge }: { gauge: LowAbsorbSentimentGauge }) {
             style={{ clipPath: `polygon(0 0, ${score}% 0, ${score}% 100%, 0 100%)` }}
           />
           <div className="absolute inset-0 flex items-center justify-center rounded-full bg-card">
-            <span className="text-2xl font-semibold tabular-nums text-foreground">{gauge.score}</span>
+            <span className="text-2xl font-semibold tabular-nums text-foreground">{gauge.status === "数据缺失" ? "—" : gauge.score}</span>
           </div>
         </div>
         <div className="min-w-0 text-sm leading-6 text-muted-foreground">
@@ -98,7 +106,7 @@ export function Sentiment() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-foreground">{panel.label}</h2>
-                <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{panel.value}</p>
+                <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{formatPanelValue(panel)}</p>
               </div>
               <span className="rounded-md border px-2 py-1 text-xs font-medium text-foreground">{panel.status}</span>
             </div>

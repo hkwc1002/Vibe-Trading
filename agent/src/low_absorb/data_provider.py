@@ -268,7 +268,7 @@ class ProviderStatusMixin:
 # Lazy re-exports for backward compatibility
 def __getattr__(name: str):
     if name == "AStockLowAbsorbProvider":
-        from .a_stock_provider import AStockLowAbsorbProvider as m
+        from .a_stock_provider_ai import AStockLowAbsorbProvider as m
         return m
     if name == "FallbackMarketDataProvider":
         from .fallback_provider import FallbackMarketDataProvider as m
