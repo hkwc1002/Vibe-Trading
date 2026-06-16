@@ -1,9 +1,9 @@
 task_id: "002-low-absorb-production-readiness"
-title: "Low Absorb 生产化与外部联调 - Batch D 第三轮审查"
+title: "Low Absorb 生产化与外部联调 - Batch D PR 二次审查"
 reviewed_by: "Codex"
 reviewed_at: "2026-06-16"
-review_type: "pre_commit"
-review_round: 3
+review_type: "pr_second_review"
+review_round: 2
 
 verdict: "APPROVED_FOR_COMMIT"
 
@@ -18,6 +18,16 @@ inputs_reviewed:
   page_evidence: false
   ci_results: false
 
+pr_context:
+  branch: "002-batch-d-feishu-integration"
+  base_branch: "main"
+  commits_reviewed:
+    - "18cb2ec [002] feat: Batch D Feishu controlled notification integration"
+    - "368f360 [002] fix: PR-CR-1 — persist notification audits via self.save()"
+  github_metadata:
+    status: "unavailable"
+    reason: "gh pr view 返回 HTTP 401，需要 GitHub 认证；本轮基于本地 main...HEAD diff 审查。"
+
 checks:
   contract_compliance: "passed"
   scope: "passed"
@@ -28,24 +38,24 @@ checks:
   no_unrelated_changes: "passed_with_note"
 
 scope_reviewed:
-  batch: "Batch D"
-  task: "T4 飞书真实联调"
-  approved_scope:
+  changed_files:
+    - "agent/src/low_absorb/api/settings.py"
     - "agent/src/low_absorb/models.py"
     - "agent/src/low_absorb/notifier.py"
     - "agent/src/low_absorb/storage.py"
-    - "agent/src/low_absorb/api/settings.py"
+    - "agent/tests/test_low_absorb_feishu_integration.py"
     - "agent/tests/test_low_absorb_notifier.py"
     - "agent/tests/test_low_absorb_reports.py"
-    - "agent/tests/test_low_absorb_feishu_integration.py"
     - "agent/tests/test_low_absorb_supervisor.py"
     - "agent/tests/test_low_absorb_workbench_api.py"
     - "agent/tests/test_low_absorb_workflow.py"
-    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/review.yaml"
-  extra_test_files_explanation:
-    - "agent/tests/test_low_absorb_supervisor.py、agent/tests/test_low_absorb_workbench_api.py、agent/tests/test_low_absorb_workflow.py 属于 contract.yaml 全局 allow_files: agent/tests/test_low_absorb*.py；delivery.yaml 已解释为 real_send toggle 引入后的必要测试适配。"
+  forbidden_scope_check:
+    command: "git diff --name-only -- agent/src/low_absorb/__init__.py frontend/src package.json frontend/package.json pyproject.toml uv.lock .github"
+    status: "passed"
+    output_summary: "无输出；未修改 frontend/src、依赖、锁文件、CI、__init__.py。"
   excluded_dirty_files:
     - ".codex/**"
     - ".playwright-mcp/**"
@@ -56,71 +66,32 @@ scope_reviewed:
     - "specs/archived/001-low-absorb-next-optimization/implementation-brief.md"
     - "specs/constitution.md"
     - "specs/templates/**"
-  note: "agent/src/low_absorb/__init__.py 已从实际 diff 中移除；未发现 frontend/src、package.json、frontend/package.json、pyproject.toml、uv.lock 或 .github 改动。"
-
-previous_review_resolution:
-  round_1:
-    CR-1_sensitive_error_leak: "fixed_in_round_3"
-    CR-2_out_of_scope_init: "fixed_in_round_2"
-    CR-3_delivery_evidence: "fixed_in_round_2"
-  round_2:
-    CR-1_raw_body_returned_after_url_redaction: "fixed"
-  evidence:
-    - "notifier.py 异常路径返回固定 error/message: feishu_send_failed。"
-    - "notifier.py HTTP 非 2xx 路径返回 error=HTTP_{status_code}、message=feishu_send_failed，不写入原始 body。"
-    - "test_low_absorb_notifier.py 覆盖异常 URL、HTTP body 中无 URL 的 token/key/raw body 不泄露。"
 
 validation:
   codex_reran:
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -c \"import os, tempfile; from src.low_absorb.storage import JsonLowAbsorbStorage; from src.low_absorb.notifier import FeishuNotifier; fd,path=tempfile.mkstemp(suffix='.json'); os.close(fd); os.unlink(path); s=JsonLowAbsorbStorage(path); n=FeishuNotifier(webhook_url='https://open.feishu.cn/webhook/test', storage=s); n.send_test_notification(force=True); print('memory', len(s.list_notification_audits())); s2=JsonLowAbsorbStorage(path); print('disk', len(s2.list_notification_audits())); os.unlink(path)\""
+      status: "passed"
+      output_summary: "memory 1 / disk 1，确认 JsonLowAbsorbStorage 重新加载后通知审计已持久化。"
     - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_notifier.py agent/tests/test_low_absorb_reports.py agent/tests/test_low_absorb_feishu_integration.py -q"
       status: "passed"
-      output_summary: "28 passed, 2 skipped, 1 warning"
-    - command: "git diff --name-status"
-      status: "completed"
-      output_summary: "确认实际 diff 只包含 Batch D 相关源码、测试和规格文档；agent/src/low_absorb/__init__.py 不再出现。"
-    - command: "git diff --name-only -- agent/src/low_absorb/__init__.py frontend/src package.json frontend/package.json pyproject.toml uv.lock .github"
-      status: "passed"
-      output_summary: "无输出，确认禁止范围未被修改。"
-    - command: "rg -n \"str\\(exc\\)\" agent/src/low_absorb/notifier.py"
-      status: "passed"
-      output_summary: "无输出，异常字符串未原样写入。"
-    - command: "rg -n \"safe_body\" agent/src/low_absorb/notifier.py"
-      status: "passed"
-      output_summary: "无输出，不再保留经脱敏响应体变量。"
-    - command: "rg -n \"body\" agent/src/low_absorb/notifier.py"
-      status: "passed_with_note"
-      output_summary: "仅命中 transport 返回值解包；未写入 result.error/message/audit。"
-    - command: "rg -n \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
-      status: "passed_with_note"
-      output_summary: "命中均为允许上下文、测试常量或项目既有技能/资料文本；本批次未新增真实交易执行入口。"
-  delivery_accepted:
+      output_summary: "29 passed, 2 skipped, 1 warning。"
     - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
-      status: "reported_passed"
-      output_summary: "delivery.yaml 记录 355 passed, 3 skipped, 3079 deselected。"
-    - command: "cd frontend; npm.cmd run test:run"
-      status: "reported_passed"
-      output_summary: "delivery.yaml 记录 26 files, 226 tests passed。"
-    - command: "cd frontend; npm.cmd run build"
-      status: "reported_passed"
-      output_summary: "delivery.yaml 记录 tsc -b && vite build 成功。"
-
-spot_checks:
-  - id: "SC-1"
-    file: "agent/src/low_absorb/notifier.py"
-    result: "passed"
-    note: "真实发送默认受 LOW_ABSORB_FEISHU_REAL_SEND 控制；未开启时不调用 transport。"
-  - id: "SC-2"
-    file: "agent/src/low_absorb/notifier.py"
-    result: "passed"
-    note: "Webhook 只通过 _mask_webhook 暴露掩码值；异常/HTTP 失败路径不再回传原始异常或响应体。"
-  - id: "SC-3"
-    file: "agent/src/low_absorb/storage.py"
-    result: "passed"
-    note: "通知审计有 MAX_NOTIFICATION_AUDITS=500 上限，并支持 JSON 持久化/读取。"
-  - id: "SC-4"
-    file: "agent/src/low_absorb/api/settings.py"
-    result: "passed"
-    note: "新增 /low-absorb/settings/notifications/status、test、audit 路由，路径符合 Codex 确认。"
+      status: "passed"
+      output_summary: "356 passed, 3 skipped, 3079 deselected, 3 warnings。"
+    - command: "npm.cmd run test:run"
+      workdir: "frontend"
+      status: "passed"
+      output_summary: "26 test files passed, 226 tests passed。"
+    - command: "npm.cmd run build"
+      workdir: "frontend"
+      status: "passed"
+      output_summary: "tsc -b && vite build 成功；仅保留既有 chunk size warning。"
+    - command: "rg -n \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
+      status: "passed"
+      output_summary: "命中均为允许上下文、人工执行文案、测试禁止词检查或既有技能资料；未发现新增真实交易执行能力或禁用独立按钮文案。"
+    - command: "gh pr view 002-batch-d-feishu-integration --json number,title,url,state,isDraft,headRefName,baseRefName,mergeStateStatus,statusCheckRollup"
+      status: "blocked"
+      output_summary: "HTTP 401: Requires authentication；无法读取 GitHub PR 元数据和 CI 状态。"
 
 findings:
   critical: []
@@ -128,7 +99,13 @@ findings:
   medium: []
   low: []
 
-changes_requested: []
+resolved_findings:
+  - id: "PR-CR-1"
+    severity: "high"
+    file: "agent/src/low_absorb/storage.py"
+    previous_issue: "通知审计没有持久化到 JsonLowAbsorbStorage，复现为 memory 1 / disk 0。"
+    fix_reviewed: "add_notification_audit() 在追加和淘汰后调用 self.save()；新增 test_notification_audit_json_persistence_roundtrip。"
+    verification: "Codex 复现脚本输出 memory 1 / disk 1；Batch D 定向测试和 low_absorb 后端回归通过。"
 
 approved_for_commit:
   allowed_files:
@@ -136,23 +113,30 @@ approved_for_commit:
     - "agent/src/low_absorb/models.py"
     - "agent/src/low_absorb/notifier.py"
     - "agent/src/low_absorb/storage.py"
+    - "agent/tests/test_low_absorb_feishu_integration.py"
     - "agent/tests/test_low_absorb_notifier.py"
     - "agent/tests/test_low_absorb_reports.py"
-    - "agent/tests/test_low_absorb_feishu_integration.py"
     - "agent/tests/test_low_absorb_supervisor.py"
     - "agent/tests/test_low_absorb_workbench_api.py"
     - "agent/tests/test_low_absorb_workflow.py"
-    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
+    - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/review.yaml"
   forbidden_files:
-    - "*"
+    - "agent/src/low_absorb/__init__.py"
+    - "frontend/src/**"
+    - "package.json"
+    - "frontend/package.json"
+    - "pyproject.toml"
+    - "requirements*.txt"
+    - "uv.lock"
+    - ".github/**"
+    - "specs/constitution.md"
   commit_message: "[002] feat: Batch D Feishu controlled notification integration"
-  draft_pr_title: "[002] feat: Low Absorb Batch D Feishu controlled integration"
+  draft_pr_title: "[002] Batch D Feishu controlled notification integration"
   draft_pr_notes:
-    - "只能精确暂存 approved_for_commit.allowed_files 中列出的文件。"
-    - "禁止暂存工作区中的 .codex、.playwright-mcp、AGENT.md、co.sh、constitution/templates、archived specs 等无关脏文件。"
-    - "提交前必须执行 git diff --cached --name-only，确认只包含 allowed_files。"
+    - "GitHub PR 元数据和 CI 状态因 gh 未认证无法读取；进入 Ready 或合并前仍需确认远端 CI 通过。"
+    - "版本操作必须只暂存 allowed_files，禁止 git add .、git add -A、git commit -am。"
 
 git_safety:
   user_authorization_required: true
@@ -163,6 +147,5 @@ git_safety:
     - "git commit -am"
   required_pre_commit_check:
     - "git diff --cached --name-only 必须只包含 approved_for_commit.allowed_files。"
-    - "若版本操作前又产生新改动，必须重新请求 Codex 审查。"
 
-summary: "Batch D 第三轮审查通过，结论为 APPROVED_FOR_COMMIT。前两轮问题均已关闭：__init__.py 越权改动已移除，delivery.yaml 证据已对齐，Feishu 真实发送异常和 HTTP 失败路径已改为固定安全摘要，不再回传原始异常或响应体。Codex 复跑 Batch D 定向测试通过：28 passed, 2 skipped, 1 warning。版本阶段只能精确暂存 allowed_files，且必须由用户明确授权。"
+summary: "PR 二次审查第 2 轮结论为 APPROVED_FOR_COMMIT。上一轮阻断项 PR-CR-1 已修复并由 Codex 复现确认 memory 1 / disk 1；Batch D 定向测试、low_absorb 后端回归、前端测试、前端构建和金融安全扫描均通过。本地 main...HEAD diff 范围符合 Batch D；GitHub PR 元数据和 CI 状态因 gh 未认证无法读取，后续进入 Ready/合并前需在 GitHub 侧确认 CI。"
