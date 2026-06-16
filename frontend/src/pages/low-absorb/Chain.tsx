@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { lowAbsorbApi } from "@/lib/lowAbsorbApi";
+import { formatCnyYi, formatPctDecimal, formatRatio } from "@/lib/lowAbsorbFormat";
 import type { LowAbsorbChainSector, LowAbsorbChainSnapshot, LowAbsorbCostChainComponent } from "@/types/lowAbsorb";
 import { cn } from "@/lib/utils";
 import { LowAbsorbPageShell } from "./shared";
@@ -29,6 +30,13 @@ function display(value: string | number) {
   return String(value);
 }
 
+function displaySectorMetric(label: string, value: string | number) {
+  if (label === "成交额" || label === "资金流") return formatCnyYi(value);
+  if (label === "涨跌幅" || label === "趋势斜率") return formatPctDecimal(value);
+  if (label === "量比" || label === "RS 强度") return formatRatio(value);
+  return display(value);
+}
+
 function confidenceLabel(value?: string) {
   if (value === "high") return "高";
   if (value === "medium") return "中";
@@ -41,7 +49,7 @@ function displayCostVersion(version: string): string {
 }
 
 function sourceTypeLabel(value?: string): string {
-  if (value === "broker_estimate") return "券商估算";
+  if (value === "broker_estimate") return "机构估算";
   if (value === "official") return "官方资料";
   if (value === "industry_research") return "产业研究";
   if (value === "manual") return "手动维护";
@@ -77,7 +85,7 @@ function CostOverview({ snapshot, onSaveManual }: { snapshot: LowAbsorbChainSnap
           <div>
             <h2 className="text-lg font-semibold text-foreground">英伟达 AI 服务器成本链</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              成本权重与信号权重来自后端配置或可编辑设置；官方资料用于确认规格，券商和产业资料仅作为估算来源并显示置信度。
+              成本权重与信号权重来自后端配置或可编辑设置；官方资料用于确认规格，产业资料仅作为估算来源并显示置信度。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -121,7 +129,7 @@ function CostOverview({ snapshot, onSaveManual }: { snapshot: LowAbsorbChainSnap
                     <input aria-label={`${row.component} 成本权重`} className="w-20 rounded-md border bg-background px-2 py-1" value={display(row.cost_weight)} onChange={(event) => updateRow(index, "cost_weight", event.target.value)} />
                   </td>
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">{(row.cost_weight_range || []).map(display).join(" - ") || "-"}</td>
-                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{display(row.cost_increase_vs_previous_generation)}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{formatPctDecimal(row.cost_increase_vs_previous_generation)}</td>
                   <td className="px-3 py-2 text-muted-foreground">{row.related_sector}</td>
                   <td className="px-3 py-2 text-muted-foreground">{row.a_share_leaders.join("、")}</td>
                   <td className="px-3 py-2 font-mono text-muted-foreground">{row.tradable_mainboard_mapping.join("、")}</td>
@@ -157,7 +165,7 @@ function SectorWorkspace({ sector }: { sector: LowAbsorbChainSector }) {
             <h2 className="text-lg font-semibold text-foreground">{sector.label}</h2>
             <p className="mt-1 text-sm text-muted-foreground">板块指数：{sector.sector_index}</p>
           </div>
-          <span className="rounded-md border px-3 py-2 text-xs font-medium text-foreground">RS 强度 {display(sector.rs_strength)}</span>
+          <span className="rounded-md border px-3 py-2 text-xs font-medium text-foreground">RS 强度 {formatRatio(sector.rs_strength)}</span>
         </div>
         <dl className="mt-4 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
           {[
@@ -172,7 +180,7 @@ function SectorWorkspace({ sector }: { sector: LowAbsorbChainSector }) {
           ].map(([label, value]) => (
             <div key={label} className="rounded-md border bg-background p-3">
               <dt className="text-xs text-muted-foreground">{label}</dt>
-              <dd className="mt-1 text-sm font-semibold tabular-nums text-foreground">{display(value)}</dd>
+              <dd className="mt-1 text-sm font-semibold tabular-nums text-foreground">{displaySectorMetric(String(label), value as string | number)}</dd>
             </div>
           ))}
         </dl>
@@ -246,14 +254,8 @@ export function Chain() {
           </button>
         ))}
       </div>
-      {message && <p className="rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">{message}</p>}
-      {activeTab === "cost-overview" ? (
-        <CostOverview snapshot={snapshot} onSaveManual={(rows) => void handleSaveManual(rows)} />
-      ) : activeSector ? (
-        <SectorWorkspace sector={activeSector} />
-      ) : (
-        <section className="rounded-lg border bg-card p-5 text-sm text-muted-foreground">该分支暂无后端示例数据。</section>
-      )}
+      {message && <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">{message}</p>}
+      {activeTab === "cost-overview" ? <CostOverview snapshot={snapshot} onSaveManual={handleSaveManual} /> : activeSector ? <SectorWorkspace sector={activeSector} /> : <p className="text-sm text-muted-foreground">该板块暂无数据。</p>}
     </LowAbsorbPageShell>
   );
 }
