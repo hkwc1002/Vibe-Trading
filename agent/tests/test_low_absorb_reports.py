@@ -222,15 +222,56 @@ class TestReportsAPI:
         stored = client.get("/low-absorb/reports").json()
         assert len(stored["reports"]) == 1
 
-    def test_notify_missing_webhook_gracefully(self) -> None:
+    def test_notify_missing_webhook_returns_mock_result_when_real_send_disabled(self) -> None:
+        """When real_send is disabled (default), missing webhook returns mock ok=True."""
         client = _client()
         client.post("/low-absorb/reports/close", params={"trade_date": "2026-06-14"})
 
         response = client.post("/low-absorb/reports/close/notify")
         assert response.status_code == 200
         body = response.json()
+        assert body["ok"] is True
+        assert body["sent"] is False
+        assert body["message"] == "real_send_disabled"
+
+    def test_notify_with_real_send_enabled_and_no_webhook_returns_error(self) -> None:
+        """When real_send is enabled but no webhook, notify returns error."""
+        import os
+
+        client = _client()
+        client.post("/low-absorb/reports/close", params={"trade_date": "2026-06-14"})
+
+        old = os.environ.get("LOW_ABSORB_FEISHU_REAL_SEND")
+        os.environ["LOW_ABSORB_FEISHU_REAL_SEND"] = "true"
+        try:
+            response = client.post("/low-absorb/reports/close/notify")
+        finally:
+            if old is not None:
+                os.environ["LOW_ABSORB_FEISHU_REAL_SEND"] = old
+            else:
+                os.environ.pop("LOW_ABSORB_FEISHU_REAL_SEND", None)
+
+        assert response.status_code == 200
+        body = response.json()
         assert body["ok"] is False
         assert body["error"] == "missing webhook"
+
+    def test_notify_writes_audit_record(self) -> None:
+        """After notify, a notification audit record must be in storage."""
+        client = _client()
+        client.post("/low-absorb/reports/close", params={"trade_date": "2026-06-14"})
+
+        client.post("/low-absorb/reports/close/notify")
+
+        # Check audit records via the notification audit API
+        audit_resp = client.get("/low-absorb/settings/notifications/audit")
+        assert audit_resp.status_code == 200
+        audits = audit_resp.json()["audits"]
+        assert len(audits) >= 1
+        # The latest audit should be for CLOSE_REPORT
+        latest = audits[-1]
+        assert latest["notification_type"] == "CLOSE_REPORT"
+        assert latest["real_send"] is False
 
     def test_get_reports_filters_by_trade_date(self) -> None:
         client = _client()
