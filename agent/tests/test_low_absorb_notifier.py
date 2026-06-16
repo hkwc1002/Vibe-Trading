@@ -537,3 +537,33 @@ def test_notification_audit_eviction() -> None:
     ids = [a.notification_id for a in storage.notification_audits]
     assert "fs-0000" not in ids
     assert f"fs-{MAX_NOTIFICATION_AUDITS + 9:04d}" in ids  # newest retained
+
+
+def test_notification_audit_json_persistence_roundtrip() -> None:
+    """Notification audits must persist through JsonLowAbsorbStorage save/load cycle."""
+    import tempfile
+
+    from src.low_absorb.storage import JsonLowAbsorbStorage
+
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    os.unlink(path)
+
+    storage = JsonLowAbsorbStorage(path)
+    notifier = FeishuNotifier(webhook_url="https://open.feishu.cn/webhook/test", storage=storage)
+    notifier.send_test_notification(force=True)
+
+    memory_count = len(storage.list_notification_audits())
+    # Destroy and reload from the same JSON path
+    del storage
+
+    storage2 = JsonLowAbsorbStorage(path)
+    disk_count = len(storage2.list_notification_audits())
+
+    os.unlink(path)
+
+    assert memory_count == 1
+    assert disk_count == 1
+    record = storage2.list_notification_audits()[0]
+    assert record.notification_type == "NOTIFIER_TEST"
+    assert record.idempotency_key == "notifier-test"

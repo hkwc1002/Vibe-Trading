@@ -333,6 +333,7 @@ class InMemoryLowAbsorbStorage:
             # Evict oldest records — keep the most recent MAX_NOTIFICATION_AUDITS
             self.notification_audits.sort(key=lambda a: a.sent_at or _dt.min)
             self.notification_audits = self.notification_audits[-MAX_NOTIFICATION_AUDITS:]
+        self.save()
 
     def list_notification_audits(self) -> list[FeishuNotificationAudit]:
         """Return all notification audit records sorted by sent_at descending."""

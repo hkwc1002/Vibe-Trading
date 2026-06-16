@@ -22,13 +22,13 @@ changed_files:
     reason: "提取_mask_webhook()、新增get_send_policy()；_send()增加real_send toggle和审计写入；异常/HTTP错误路径使用固定安全摘要（feishu_send_failed / HTTP_{code}），零原始响应体回传"
   - path: "agent/src/low_absorb/storage.py"
     action: "modified"
-    reason: "新增MAX_NOTIFICATION_AUDITS=500和notification_audits持久化"
+    reason: "新增MAX_NOTIFICATION_AUDITS=500和notification_audits持久化；add_notification_audit()增加self.save()确保Json落盘"
   - path: "agent/src/low_absorb/api/settings.py"
     action: "modified"
     reason: "导入notifier._mask_webhook；新增3个通知状态/测试/审计端点"
   - path: "agent/tests/test_low_absorb_notifier.py"
     action: "modified"
-    reason: "新增11个测试（含_safe_error脱敏、异常路径固定安全摘要、HTTP错误体零回传、非URL token/key不泄露、审计安全）；更新5个现有测试适配real_send toggle和错误格式"
+    reason: "新增12个测试（含_safe_error脱敏、异常路径固定安全摘要、HTTP错误体零回传、非URL token/key不泄露、Json roundtrip持久化、审计安全）；更新5个现有测试适配real_send toggle和错误格式"
   - path: "agent/tests/test_low_absorb_reports.py"
     action: "modified"
     reason: "更新1个测试；新增2个测试（real_send error + audit）"
@@ -91,16 +91,19 @@ self_review:
     - severity: "medium"
       issue: "CR-3: delivery.yaml命令记录不完整，scope_check不准确"
       fix_status: "已修复：修正命令路径、output_summary、scope_check extra_files"
+    - severity: "high"
+      issue: "PR-CR-1: add_notification_audit()未调用save()，JsonLowAbsorbStorage重载后审计丢失"
+      fix_status: "已修复：add_notification_audit()追加self.save()；补充Json roundtrip测试验证memory 1 / disk 1"
   revalidated_after_fixes: true
 
 validation_results:
   - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_notifier.py agent/tests/test_low_absorb_reports.py agent/tests/test_low_absorb_feishu_integration.py -q"
     status: "passed"
-    output_summary: "28 passed, 2 skipped, 1 warning（2 skipped为环境守卫联调测试，需LOW_ABSORB_FEISHU_REAL_SEND=true触发）"
+    output_summary: "29 passed, 2 skipped, 1 warning（2 skipped为环境守卫联调测试，需LOW_ABSORB_FEISHU_REAL_SEND=true触发；含Json roundtrip持久化测试）"
     risk_if_not_run: "无法验证Batch D飞书功能"
   - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
     status: "passed"
-    output_summary: "355 passed, 3 skipped, 3079 deselected"
+    output_summary: "356 passed, 3 skipped, 3079 deselected"
     risk_if_not_run: "无法证明后端未回归"
   - command: "cd frontend; npm.cmd run test:run"
     status: "passed"
@@ -157,9 +160,7 @@ suggested_commit:
 
 notes_for_codex:
   focus:
-    - "CR-1第二轮修复：异常/HTTP错误路径使用固定安全摘要（feishu_send_failed / HTTP_{status_code}），零原始响应体回传error/message/audit"
-    - "新增测试验证body含token/key但无URL的场景仍不泄露"
-    - "CR-2已修复（__init__.py回退），CR-3已修复（delivery.yaml对齐git diff）"
-    - "全量回归355 passed（含5个脱敏/安全摘要测试）"
+    - "PR-CR-1修复：add_notification_audit()追加self.save()，Json roundtrip验证memory 1 / disk 1"
+    - "CR-1/CR-2/CR-3已关闭。全量回归356 passed"
   known_risks:
     - "3个联调测试需env=true手动验证"
