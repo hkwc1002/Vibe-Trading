@@ -356,6 +356,27 @@ class FeishuNotificationResult(LowAbsorbBaseModel):
     message: str = Field(default="", min_length=0)
 
 
+class FeishuSendPolicy(LowAbsorbBaseModel):
+    """Current Feishu notification send policy derived from env and config."""
+
+    real_send_enabled: bool
+    webhook_configured: bool
+    masked_webhook: str | None = None
+
+
+class FeishuNotificationAudit(LowAbsorbBaseModel):
+    """Audit record for a single Feishu notification attempt."""
+
+    notification_id: str = Field(..., min_length=1)
+    notification_type: str
+    target_id: str | None = None
+    idempotency_key: str = Field(..., min_length=1)
+    real_send: bool = False
+    ok: bool = False
+    error: str | None = None
+    sent_at: datetime | None = None
+
+
 # ── Backtest models ───────────────────────────────────────────────────────
 
 BACKTEST_RUN_STATUSES = ("QUEUED", "RUNNING", "SUCCEEDED", "FAILED")

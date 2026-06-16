@@ -155,8 +155,9 @@ def test_workflow_feishu_handles_missing_webhook_gracefully() -> None:
     feishu_resp = client.post(f"/low-absorb/trade-plans/{plan_id}/feishu")
     assert feishu_resp.status_code == 200
     data = feishu_resp.json()
-    assert data["ok"] is False
-    assert data["error"] == "missing webhook"
+    # With real_send disabled (default), mock returns ok=True
+    assert data["ok"] is True
+    assert data["message"] == "real_send_disabled"
 
 
 def test_workflow_manual_fill_creates_position() -> None:

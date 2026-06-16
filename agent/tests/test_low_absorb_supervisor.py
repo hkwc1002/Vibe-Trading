@@ -146,6 +146,8 @@ def test_relaxed_stop_tolerance_prevents_unlimited_tolerance() -> None:
 
 
 def test_feishu_idempotency_on_risk_alerts() -> None:
+    import os
+
     calls: list[dict[str, object]] = []
 
     def transport(url: str, payload: dict[str, object]) -> tuple[int, str]:
@@ -161,20 +163,28 @@ def test_feishu_idempotency_on_risk_alerts() -> None:
     position = _position()
     risk = calculate_position_risk(position)
 
-    first = notifier.send_risk_alert(
-        position=position,
-        risk=risk,
-        first_30m_close=Decimal("17.70"),
-        industry_alpha=Decimal("-0.04"),
-        supervision_status=RiskSupervisionStatus.EXIT_SUGGESTED.value,
-    )
-    second = notifier.send_risk_alert(
-        position=position,
-        risk=risk,
-        first_30m_close=Decimal("17.70"),
-        industry_alpha=Decimal("-0.04"),
-        supervision_status=RiskSupervisionStatus.EXIT_SUGGESTED.value,
-    )
+    old = os.environ.get("LOW_ABSORB_FEISHU_REAL_SEND")
+    os.environ["LOW_ABSORB_FEISHU_REAL_SEND"] = "true"
+    try:
+        first = notifier.send_risk_alert(
+            position=position,
+            risk=risk,
+            first_30m_close=Decimal("17.70"),
+            industry_alpha=Decimal("-0.04"),
+            supervision_status=RiskSupervisionStatus.EXIT_SUGGESTED.value,
+        )
+        second = notifier.send_risk_alert(
+            position=position,
+            risk=risk,
+            first_30m_close=Decimal("17.70"),
+            industry_alpha=Decimal("-0.04"),
+            supervision_status=RiskSupervisionStatus.EXIT_SUGGESTED.value,
+        )
+    finally:
+        if old is not None:
+            os.environ["LOW_ABSORB_FEISHU_REAL_SEND"] = old
+        else:
+            os.environ.pop("LOW_ABSORB_FEISHU_REAL_SEND", None)
 
     assert first.ok is True
     assert second.ok is True

@@ -76,6 +76,7 @@ def test_workbench_api_returns_seeded_manual_workflow_state() -> None:
 
 
 def test_feishu_push_handles_missing_webhook_gracefully_without_status_change() -> None:
+    """Without real_send, missing webhook returns mock ok=True (status becomes SENT_TO_FEISHU)."""
     _, plan = _seed_state()
     client = _client()
 
@@ -85,20 +86,24 @@ def test_feishu_push_handles_missing_webhook_gracefully_without_status_change() 
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert first.json()["ok"] is False
-    assert second.json()["ok"] is False
-    assert first.json()["error"] == "missing webhook"
-    assert workbench["trade_plans"][0]["status"] == "RECOMMENDED"
+    # With real_send disabled (default), mock returns ok=True
+    assert first.json()["ok"] is True
+    assert first.json()["message"] == "real_send_disabled"
+    assert second.json()["ok"] is True
+    # Mock success still updates status to SENT_TO_FEISHU (consistent with ok=True)
+    assert workbench["trade_plans"][0]["status"] == "SENT_TO_FEISHU"
 
 
 def test_notify_test_endpoint_handles_missing_webhook_gracefully() -> None:
+    """Without real_send, missing webhook returns mock ok=True."""
     client = _client()
 
     response = client.post("/low-absorb/notify/test")
 
     assert response.status_code == 200
-    assert response.json()["ok"] is False
-    assert response.json()["error"] == "missing webhook"
+    body = response.json()
+    assert body["ok"] is True
+    assert body["message"] == "real_send_disabled"
 
 
 def test_manual_fill_reconciliation_creates_position_and_risk_matrix() -> None:

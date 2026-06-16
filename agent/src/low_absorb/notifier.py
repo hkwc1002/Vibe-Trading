@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -10,8 +11,10 @@ from uuid import uuid4
 
 from .models import (
     CloseReport,
+    FeishuNotificationAudit,
     FeishuNotificationResult,
     FeishuNotificationType,
+    FeishuSendPolicy,
     LowAbsorbSignal,
     ManualPosition,
     ManualTradePlan,
@@ -21,6 +24,52 @@ from .models import (
 from .storage import InMemoryLowAbsorbStorage, LowAbsorbRepository
 
 FeishuTransport = Callable[[str, dict[str, object]], tuple[int, str]]
+
+
+# Regex that matches any HTTPS/HTTP URL — used to scrub sensitive URLs
+# (including webhook tokens) from error messages before they reach
+# API responses, logs, or audit records.
+_URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
+
+
+def _safe_error(msg: str) -> str:
+    """Strip URLs (and any embedded secrets) from an error message.
+
+    Webhook tokens, API keys, or upstream URLs embedded in httpx
+    exception strings or Feishu response bodies are replaced with
+    ``[redacted]`` so they never appear in API responses, logs, or
+    audit records.
+    """
+    return _URL_PATTERN.sub("[redacted]", msg)
+
+
+def _mask_webhook(webhook: str | None) -> str | None:
+    """Mask the sensitive portion of a Feishu webhook URL.
+
+    Never returns a full webhook — only the host/path prefix with the
+    token portion replaced by ``****``.
+    """
+    if not webhook:
+        return None
+    if "/" in webhook:
+        return f"{webhook.rsplit('/', 1)[0]}/****"
+    return "****"
+
+
+def get_send_policy(storage: LowAbsorbRepository) -> FeishuSendPolicy:
+    """Derive the current Feishu send policy from environment and storage.
+
+    *real_send_enabled* is ``True`` only when ``LOW_ABSORB_FEISHU_REAL_SEND``
+    is set to ``"1"`` or ``"true"`` (case-insensitive).  The webhook URL is
+    never returned in full — only a masked form.
+    """
+    webhook = storage.get_webhook() or os.getenv("LOW_ABSORB_FEISHU_WEBHOOK")
+    real_send = os.getenv("LOW_ABSORB_FEISHU_REAL_SEND", "").lower() in ("1", "true")
+    return FeishuSendPolicy(
+        real_send_enabled=real_send,
+        webhook_configured=webhook is not None,
+        masked_webhook=_mask_webhook(webhook),
+    )
 
 
 def make_feishu_result(
@@ -159,7 +208,7 @@ def build_fill_reminder_card(*, plan: ManualTradePlan) -> dict[str, object]:
 
 
 class FeishuNotifier:
-    """Feishu sender with idempotency and graceful failure semantics."""
+    """Feishu sender with idempotency, real_send toggle and audit trail."""
 
     def __init__(
         self,
@@ -172,12 +221,39 @@ class FeishuNotifier:
         self.storage = storage or InMemoryLowAbsorbStorage()
         self.transport = transport or _default_transport
 
+    def get_policy(self) -> FeishuSendPolicy:
+        """Convenience — delegate to module-level ``get_send_policy`` with our storage."""
+        return get_send_policy(self.storage)
+
+    def _write_audit(
+        self,
+        result: FeishuNotificationResult,
+        *,
+        real_send: bool,
+        target_id: str | None = None,
+    ) -> None:
+        """Write a ``FeishuNotificationAudit`` record for the given send result."""
+        notification_type = result.notification_type
+        type_str = notification_type.value if isinstance(notification_type, NotificationType) else str(notification_type)
+        audit = FeishuNotificationAudit(
+            notification_id=result.notification_id,
+            notification_type=type_str,
+            target_id=target_id,
+            idempotency_key=result.idempotency_key,
+            real_send=real_send,
+            ok=result.ok,
+            error=result.error,
+            sent_at=result.sent_at,
+        )
+        self.storage.add_notification_audit(audit)
+
     def send_test_notification(self, *, force: bool = False) -> FeishuNotificationResult:
         return self._send(
             notification_type=NotificationType.NOTIFIER_TEST,
             idempotency_key="notifier-test",
             payload=build_notifier_test_card(),
             force=force,
+            target_id="notifier-test",
         )
 
     def send_buy_recommendation(
@@ -192,6 +268,7 @@ class FeishuNotifier:
             idempotency_key=f"{plan.trade_date:%Y%m%d}:{NotificationType.BUY_RECOMMENDATION}:{signal.signal_id}",
             payload=build_buy_recommendation_card(plan=plan, signal=signal),
             force=force,
+            target_id=signal.signal_id,
         )
 
     def send_close_report(self, *, report: CloseReport, force: bool = False) -> FeishuNotificationResult:
@@ -200,6 +277,7 @@ class FeishuNotifier:
             idempotency_key=f"{report.trade_date:%Y%m%d}:{NotificationType.CLOSE_REPORT}:{report.report_id}",
             payload=build_close_report_card(report=report),
             force=force,
+            target_id=report.report_id,
         )
 
     def send_risk_alert(
@@ -223,6 +301,7 @@ class FeishuNotifier:
                 supervision_status=supervision_status,
             ),
             force=force,
+            target_id=position.position_id,
         )
 
     def send_fill_reminder(self, *, plan: ManualTradePlan, force: bool = False) -> FeishuNotificationResult:
@@ -231,6 +310,7 @@ class FeishuNotifier:
             idempotency_key=f"{plan.trade_date:%Y%m%d}:{NotificationType.FILL_REMINDER}:{plan.plan_id}",
             payload=build_fill_reminder_card(plan=plan),
             force=force,
+            target_id=plan.plan_id,
         )
 
     def _send(
@@ -240,13 +320,55 @@ class FeishuNotifier:
         idempotency_key: str,
         payload: dict[str, object],
         force: bool,
+        target_id: str | None = None,
     ) -> FeishuNotificationResult:
+        # ── Idempotency ────────────────────────────────────────────────────
         if not force:
             existing = self.storage.notifications.get(idempotency_key)
             if existing is not None:
                 return existing.model_copy(update={"skipped": True})
 
-        if not self.webhook_url:
+        real_send_enabled = os.getenv("LOW_ABSORB_FEISHU_REAL_SEND", "").lower() in ("1", "true")
+
+        # ── Real send path ─────────────────────────────────────────────────
+        if real_send_enabled and self.webhook_url:
+            try:
+                status_code, body = self.transport(self.webhook_url, payload)
+            except Exception as exc:  # noqa: BLE001 — notification failures must not crash workflows
+                result = FeishuNotificationResult(
+                    notification_id=f"fs-{uuid4().hex}",
+                    ok=False,
+                    notification_type=notification_type,
+                    idempotency_key=idempotency_key,
+                    skipped=False,
+                    error="feishu_send_failed",
+                    sent=False,
+                    message="feishu_send_failed",
+                )
+                self.storage.notifications[idempotency_key] = result
+                self.storage.save()
+                self._write_audit(result, real_send=True, target_id=target_id)
+                return result
+
+            ok = 200 <= status_code < 300
+            result = FeishuNotificationResult(
+                notification_id=f"fs-{uuid4().hex}",
+                ok=ok,
+                notification_type=notification_type,
+                idempotency_key=idempotency_key,
+                sent_at=datetime.now(timezone.utc) if ok else None,
+                skipped=False,
+                error=None if ok else f"HTTP_{status_code}",
+                sent=ok,
+                message="sent" if ok else "feishu_send_failed",
+            )
+            self.storage.notifications[idempotency_key] = result
+            self.storage.save()
+            self._write_audit(result, real_send=True, target_id=target_id)
+            return result
+
+        # ── Mock path — never call transport ──────────────────────────────
+        if real_send_enabled and not self.webhook_url:
             result = FeishuNotificationResult(
                 notification_id=f"fs-{uuid4().hex}",
                 ok=False,
@@ -257,39 +379,26 @@ class FeishuNotifier:
                 sent=False,
                 message="missing webhook",
             )
-            self.storage.notifications[idempotency_key] = result
-            self.storage.save()
-            return result
-
-        try:
-            status_code, body = self.transport(self.webhook_url, payload)
-        except Exception as exc:  # noqa: BLE001 - notification failures must not crash workflows
+        elif not real_send_enabled:
             result = FeishuNotificationResult(
                 notification_id=f"fs-{uuid4().hex}",
-                ok=False,
+                ok=True,
                 notification_type=notification_type,
                 idempotency_key=idempotency_key,
-                skipped=False,
-                error=str(exc),
                 sent=False,
-                message=str(exc),
+                message="real_send_disabled",
             )
-            self.storage.notifications[idempotency_key] = result
-            self.storage.save()
-            return result
+        else:
+            result = FeishuNotificationResult(
+                notification_id=f"fs-{uuid4().hex}",
+                ok=True,
+                notification_type=notification_type,
+                idempotency_key=idempotency_key,
+                sent=False,
+                message="mock_send",
+            )
 
-        ok = 200 <= status_code < 300
-        result = FeishuNotificationResult(
-            notification_id=f"fs-{uuid4().hex}",
-            ok=ok,
-            notification_type=notification_type,
-            idempotency_key=idempotency_key,
-            sent_at=datetime.now(timezone.utc) if ok else None,
-            skipped=False,
-            error=None if ok else f"HTTP {status_code}: {body}",
-            sent=ok,
-            message="sent" if ok else body,
-        )
         self.storage.notifications[idempotency_key] = result
         self.storage.save()
+        self._write_audit(result, real_send=real_send_enabled, target_id=target_id)
         return result

@@ -16,6 +16,7 @@ from .models import (
     BacktestRun,
     CloseReport,
     CostChainModel,
+    FeishuNotificationAudit,
     FeishuNotificationResult,
     LowAbsorbSignal,
     ManualFill,
@@ -25,6 +26,7 @@ from .models import (
 
 
 MAX_BACKTEST_RUNS = 50
+MAX_NOTIFICATION_AUDITS = 500
 
 
 class LowAbsorbRepository(Protocol):
@@ -71,6 +73,12 @@ class LowAbsorbRepository(Protocol):
     def update_cost_chain_model(self, version: str, components: list[Any]) -> CostChainModel:
         """Persist an editable cost-chain model version."""
 
+    def add_notification_audit(self, audit: FeishuNotificationAudit) -> None:
+        """Persist a notification audit record, evicting oldest when over capacity."""
+
+    def list_notification_audits(self) -> list[FeishuNotificationAudit]:
+        """Return all notification audit records sorted by sent_at descending."""
+
 
 class InMemoryLowAbsorbStorage:
     """Minimal in-memory storage useful for tests and API skeletons."""
@@ -84,6 +92,7 @@ class InMemoryLowAbsorbStorage:
         self.reports: dict[str, CloseReport] = {}
         self.candidates: dict[str, CostChainCandidate] = {}
         self.audit_log: list[CostChainAudit] = []
+        self.notification_audits: list[FeishuNotificationAudit] = []
         self.backtest_runs: dict[str, BacktestRun] = {}
         self.backtest_results: dict[str, BacktestResult] = {}
         self._config = LowAbsorbConfig()
@@ -99,6 +108,7 @@ class InMemoryLowAbsorbStorage:
         self.reports.clear()
         self.candidates.clear()
         self.audit_log.clear()
+        self.notification_audits.clear()
         self.backtest_runs.clear()
         self.backtest_results.clear()
         self.save()
@@ -314,6 +324,24 @@ class InMemoryLowAbsorbStorage:
         """Return all audit entries sorted by time descending."""
         return sorted(self.audit_log, key=lambda a: a.created_at, reverse=True)
 
+    # ── Notification audit methods ─────────────────────────────────────────
+
+    def add_notification_audit(self, audit: FeishuNotificationAudit) -> None:
+        """Persist a notification audit record, evicting oldest when over capacity."""
+        self.notification_audits.append(audit)
+        if len(self.notification_audits) > MAX_NOTIFICATION_AUDITS:
+            # Evict oldest records — keep the most recent MAX_NOTIFICATION_AUDITS
+            self.notification_audits.sort(key=lambda a: a.sent_at or _dt.min)
+            self.notification_audits = self.notification_audits[-MAX_NOTIFICATION_AUDITS:]
+
+    def list_notification_audits(self) -> list[FeishuNotificationAudit]:
+        """Return all notification audit records sorted by sent_at descending."""
+        return sorted(
+            self.notification_audits,
+            key=lambda a: a.sent_at or _dt.min,
+            reverse=True,
+        )
+
     # ── Backtest run methods ──────────────────────────────────────────────
 
     def add_backtest_run(self, run: BacktestRun, result: BacktestResult | None = None) -> BacktestRun:
@@ -374,6 +402,7 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
             "reports": [item.model_dump(mode="json") for item in self.reports.values()],
             "candidates": [item.model_dump(mode="json") for item in self.candidates.values()],
             "audit_log": [item.model_dump(mode="json") for item in self.audit_log],
+            "notification_audits": [item.model_dump(mode="json") for item in self.notification_audits],
             "backtest_runs": [item.model_dump(mode="json") for item in self.backtest_runs.values()],
             "backtest_results": [item.model_dump(mode="json") for item in self.backtest_results.values()],
             "settings": {
@@ -426,6 +455,9 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
         }
         self.audit_log = [
             CostChainAudit.model_validate(row) for row in payload.get("audit_log", [])
+        ]
+        self.notification_audits = [
+            FeishuNotificationAudit.model_validate(row) for row in payload.get("notification_audits", [])
         ]
         self.backtest_runs = {
             item.run_id: item
