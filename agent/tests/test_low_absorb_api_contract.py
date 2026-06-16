@@ -84,3 +84,50 @@ def test_data_sources_attempts_returns_list() -> None:
     body = response.json()
     assert body["success"] is True
     assert isinstance(body["data"]["attempts"], list)
+
+
+def test_health_liveness_contract() -> None:
+    """GET /low-absorb/health/liveness must return {'status': 'alive'}."""
+    client = _client()
+    response = client.get("/low-absorb/health/liveness")
+    assert response.status_code == 200
+    assert response.json() == {"status": "alive"}
+
+
+def test_health_readiness_contract() -> None:
+    """GET /low-absorb/health/readiness must return {ready, failures} with each failure having name/ok/detail."""
+    client = _client()
+    response = client.get("/low-absorb/health/readiness")
+    assert response.status_code == 200
+    body = response.json()
+    assert "ready" in body
+    assert isinstance(body["ready"], bool)
+    assert "failures" in body
+    assert isinstance(body["failures"], list)
+    for f in body["failures"]:
+        assert "name" in f
+        assert "ok" in f
+        assert isinstance(f["ok"], bool)
+        assert "detail" in f
+
+
+def test_health_readiness_detail_is_fixed_summary() -> None:
+    """Readiness failure details must be fixed category strings — no paths, keys, tokens, or webhooks."""
+    client = _client()
+    response = client.get("/low-absorb/health/readiness")
+    assert response.status_code == 200
+    body = response.json()
+    allowed_details = {
+        "ok", "configured", "missing",
+        "storage_not_writable", "fixture_fallback_forbidden",
+        "no_active_version", "fixture_only", "fixture_only_with_production_mode",
+    }
+    for f in body["failures"]:
+        # Details for failed checks must be one of the allowed set
+        if not f["ok"]:
+            assert f["detail"] in allowed_details, (
+                f"Readiness failure '{f['name']}' has unexpected detail '{f['detail']}'"
+            )
+            # Verify no sensitive data
+            assert "/" not in f["detail"], f"Readiness detail contains path: {f['detail']}"
+            assert "http" not in f["detail"].lower(), f"Readiness detail contains URL: {f['detail']}"

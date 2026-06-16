@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -597,3 +599,183 @@ class TestCostChainStorage:
         if audit_log:
             assert all(hasattr(entry, "actor") for entry in audit_log)
             assert all(hasattr(entry, "created_at") for entry in audit_log)
+
+
+class TestJsonStorageBackupRestore:
+    """export_state / load_state roundtrip for JsonLowAbsorbStorage."""
+
+    def test_export_state_creates_file(self, tmp_path) -> None:
+        import tempfile
+
+        fd, state_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(state_path)
+
+        storage = JsonLowAbsorbStorage(state_path)
+        storage.save()  # writes an empty state
+
+        backup_dir = tmp_path / "backups"
+        from src.low_absorb.deployment.backup import export_state
+
+        result = export_state(storage, str(backup_dir))
+        assert result.exists()
+        assert result.stat().st_size > 0
+        assert "low_absorb_state_" in result.name
+        os.unlink(state_path)
+
+    def test_load_state_roundtrip(self, tmp_path) -> None:
+        import tempfile
+
+        fd, state_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(state_path)
+
+        # Write state with a test signal
+        storage = JsonLowAbsorbStorage(state_path)
+        signal = LowAbsorbSignal(
+            signal_id="sig-backup-test",
+            trade_date=date(2026, 6, 16),
+            stock_code="601138",
+            stock_name="工业富联",
+            branch_name="AI 服务器",
+            grade="A",
+            ma20_deviation_pct=Decimal("-0.03"),
+            volume_ratio=Decimal("0.70"),
+            lower_shadow_atr=Decimal("1.00"),
+            reason="test",
+        )
+        storage.signals[signal.signal_id] = signal
+        storage.save()
+
+        # Backup
+        from src.low_absorb.deployment.backup import export_state, load_state
+
+        backup_dir = tmp_path / "backups"
+        backup_path = export_state(storage, str(backup_dir))
+
+        # Clear and restore
+        storage.signals.clear()
+        assert len(storage.signals) == 0
+
+        load_state(storage, str(backup_path))
+        assert signal.signal_id in storage.signals
+        restored = storage.signals[signal.signal_id]
+        assert restored.stock_name == "工业富联"
+
+        os.unlink(state_path)
+
+    def test_load_state_rejects_invalid_json(self, tmp_path) -> None:
+        import tempfile
+
+        fd, state_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(state_path)
+
+        storage = JsonLowAbsorbStorage(state_path)
+        storage.save()
+
+        invalid = tmp_path / "bad.json"
+        invalid.write_text("not json", encoding="utf-8")
+
+        from src.low_absorb.deployment.backup import load_state
+
+        with pytest.raises(ValueError, match="validation failed"):
+            load_state(storage, str(invalid))
+
+        os.unlink(state_path)
+
+
+class TestJsonStorageDirectLoadState:
+    """Direct JsonLowAbsorbStorage.load_state() roundtrip and failure tests."""
+
+    def test_load_state_direct_roundtrip(self, tmp_path) -> None:
+        import tempfile
+
+        fd, state_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(state_path)
+
+        storage = JsonLowAbsorbStorage(state_path)
+        signal = LowAbsorbSignal(
+            signal_id="sig-direct",
+            trade_date=date(2026, 6, 16),
+            stock_code="601138",
+            stock_name="工业富联",
+            branch_name="AI 服务器",
+            grade="A",
+            ma20_deviation_pct=Decimal("-0.03"),
+            volume_ratio=Decimal("0.70"),
+            lower_shadow_atr=Decimal("1.00"),
+            reason="test",
+        )
+        storage.signals[signal.signal_id] = signal
+        storage.save()
+
+        backup_path = tmp_path / "backup.json"
+        storage.export_state(str(backup_path))
+        assert backup_path.exists()
+
+        storage.signals.clear()
+        assert len(storage.signals) == 0
+
+        storage.load_state(str(backup_path))
+        assert signal.signal_id in storage.signals
+        restored = storage.signals[signal.signal_id]
+        assert restored.stock_name == "工业富联"
+
+        os.unlink(state_path)
+
+    def test_load_state_direct_rejects_invalid_json(self, tmp_path) -> None:
+        import tempfile
+
+        fd, state_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(state_path)
+
+        storage = JsonLowAbsorbStorage(state_path)
+        storage.save()
+
+        bad = tmp_path / "bad.json"
+        bad.write_text("not json", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="not valid JSON"):
+            storage.load_state(str(bad))
+
+        os.unlink(state_path)
+
+    def test_load_state_fail_closed_leaves_current_state_unchanged(self, tmp_path) -> None:
+        import tempfile
+
+        fd, state_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(state_path)
+
+        storage = JsonLowAbsorbStorage(state_path)
+        signal = LowAbsorbSignal(
+            signal_id="sig-safe",
+            trade_date=date(2026, 6, 16),
+            stock_code="601138",
+            stock_name="工业富联",
+            branch_name="AI 服务器",
+            grade="A",
+            ma20_deviation_pct=Decimal("-0.03"),
+            volume_ratio=Decimal("0.70"),
+            lower_shadow_atr=Decimal("1.00"),
+            reason="test",
+        )
+        storage.signals[signal.signal_id] = signal
+        storage.save()
+        from pathlib import Path
+        original_content = Path(state_path).read_bytes()
+
+        bad = tmp_path / "bad.json"
+        bad.write_text("{invalid", encoding="utf-8")
+
+        with pytest.raises((ValueError, json.JSONDecodeError)):
+            storage.load_state(str(bad))
+
+        # Current state must be byte-for-byte unchanged
+        assert Path(state_path).read_bytes() == original_content
+        assert signal.signal_id in storage.signals
+
+        os.unlink(state_path)
