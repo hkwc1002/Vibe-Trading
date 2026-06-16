@@ -478,3 +478,73 @@ class JsonLowAbsorbStorage(InMemoryLowAbsorbStorage):
         if isinstance(cost_models, list):
             parsed = [CostChainModel.model_validate(row) for row in cost_models]
             self._cost_chain_models = {item.version: item for item in parsed}
+
+    # ── Backup / restore helpers ────────────────────────────────────────────
+
+    def export_state(self, target_path: str | Path) -> None:
+        """Copy the current state.json to *target_path*.
+
+        The path is created directly (callers should use timestamped names
+        to avoid overwrites — see :func:`deployment.backup.export_state`).
+        """
+        if self.path.exists():
+            import shutil
+
+            target = Path(target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.path, target)
+
+    def load_state(self, source_path: str | Path) -> None:
+        """Restore state from *source_path*, with full Pydantic validation.
+
+        1. The source file's JSON syntax is validated explicitly (since
+           ``_load`` silently catches ``JSONDecodeError``).
+        2. A dry-run ``JsonLowAbsorbStorage`` instance parses every record
+           through ``model_validate`` to confirm structural integrity.
+        3. If validation passes the current state is atomically replaced
+           via a temporary file + rename.
+        4. If validation **fails** the current state is **never** modified.
+
+        Raises ``ValueError`` or ``pydantic.ValidationError`` on failure.
+        """
+        import json
+        import tempfile
+
+        from pydantic import ValidationError
+
+        source = Path(source_path)
+
+        # ── Step 1: explicit JSON syntax check ────────────────────────────
+        # _load() silently catches JSONDecodeError, so we catch it here.
+        try:
+            raw_bytes = source.read_bytes()
+            json.loads(raw_bytes)  # will raise json.JSONDecodeError if bad
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"Backup file is not valid JSON: {exc}") from exc
+
+        # ── Step 2: dry-run Pydantic validation ───────────────────────────
+        dry_run = JsonLowAbsorbStorage(source)
+        try:
+            dry_run._load()
+        except (ValidationError, ValueError) as exc:
+            raise ValueError(f"Backup file failed model validation: {exc}") from exc
+
+        # The content is valid — read it for the atomic write below.
+        raw_text = raw_bytes.decode("utf-8")
+
+        # ── Step 3: atomic replace ────────────────────────────────────────
+        fd, tmp = tempfile.mkstemp(
+            suffix=".json",
+            prefix=".state_restore_",
+            dir=self.path.parent,
+        )
+        try:
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write(raw_text)
+            Path(tmp).replace(self.path)
+        except OSError as exc:
+            Path(tmp).unlink(missing_ok=True)
+            raise OSError(f"Failed to atomically replace state file: {exc}") from exc
+
+        # ── Step 4: reload ────────────────────────────────────────────────
+        self._load()

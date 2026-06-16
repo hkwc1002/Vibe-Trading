@@ -1,9 +1,9 @@
 task_id: "002-low-absorb-production-readiness"
-title: "Low Absorb 生产化与外部联调 - Batch D 第三轮审查"
+title: "Low Absorb 生产化与外部联调 - Batch E 复审"
 reviewed_by: "Codex"
 reviewed_at: "2026-06-16"
 review_type: "pre_commit"
-review_round: 3
+review_round: 2
 
 verdict: "APPROVED_FOR_COMMIT"
 
@@ -12,7 +12,7 @@ inputs_reviewed:
   contract_yaml: true
   implementation_yaml: true
   delivery_yaml: true
-  markdown_docs: false
+  markdown_docs: true
   git_diff: true
   validation_logs: true
   page_evidence: false
@@ -28,24 +28,25 @@ checks:
   no_unrelated_changes: "passed_with_note"
 
 scope_reviewed:
-  batch: "Batch D"
-  task: "T4 飞书真实联调"
+  batch: "Batch E"
+  task: "T5 本机生产部署配置"
   approved_scope:
-    - "agent/src/low_absorb/models.py"
-    - "agent/src/low_absorb/notifier.py"
+    - "agent/src/low_absorb/deployment/__init__.py"
+    - "agent/src/low_absorb/deployment/config_validator.py"
+    - "agent/src/low_absorb/deployment/backup.py"
+    - "agent/src/low_absorb/api/health.py"
+    - "agent/src/low_absorb/api/__init__.py"
     - "agent/src/low_absorb/storage.py"
-    - "agent/src/low_absorb/api/settings.py"
-    - "agent/tests/test_low_absorb_notifier.py"
-    - "agent/tests/test_low_absorb_reports.py"
-    - "agent/tests/test_low_absorb_feishu_integration.py"
-    - "agent/tests/test_low_absorb_supervisor.py"
-    - "agent/tests/test_low_absorb_workbench_api.py"
-    - "agent/tests/test_low_absorb_workflow.py"
+    - "docs/deployment/low_absorb_production.md"
+    - "agent/tests/test_low_absorb_api_contract.py"
+    - "agent/tests/test_low_absorb_main_api_integration.py"
+    - "agent/tests/test_low_absorb_storage.py"
     - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
     - "specs/active/002-low-absorb-production-readiness/review.yaml"
-  extra_test_files_explanation:
-    - "agent/tests/test_low_absorb_supervisor.py、agent/tests/test_low_absorb_workbench_api.py、agent/tests/test_low_absorb_workflow.py 属于 contract.yaml 全局 allow_files: agent/tests/test_low_absorb*.py；delivery.yaml 已解释为 real_send toggle 引入后的必要测试适配。"
+  ignored_but_required:
+    - path: "docs/deployment/low_absorb_production.md"
+      note: "该文件被 .gitignore:54 docs/* 忽略，但属于 Batch E 验收要求和 approved_for_commit.allowed_files；版本阶段必须精确强制暂存该文件，且不得扩大到 docs/ 其他文件。"
   excluded_dirty_files:
     - ".codex/**"
     - ".playwright-mcp/**"
@@ -56,71 +57,71 @@ scope_reviewed:
     - "specs/archived/001-low-absorb-next-optimization/implementation-brief.md"
     - "specs/constitution.md"
     - "specs/templates/**"
-  note: "agent/src/low_absorb/__init__.py 已从实际 diff 中移除；未发现 frontend/src、package.json、frontend/package.json、pyproject.toml、uv.lock 或 .github 改动。"
 
 previous_review_resolution:
-  round_1:
-    CR-1_sensitive_error_leak: "fixed_in_round_3"
-    CR-2_out_of_scope_init: "fixed_in_round_2"
-    CR-3_delivery_evidence: "fixed_in_round_2"
-  round_2:
-    CR-1_raw_body_returned_after_url_redaction: "fixed"
-  evidence:
-    - "notifier.py 异常路径返回固定 error/message: feishu_send_failed。"
-    - "notifier.py HTTP 非 2xx 路径返回 error=HTTP_{status_code}、message=feishu_send_failed，不写入原始 body。"
-    - "test_low_absorb_notifier.py 覆盖异常 URL、HTTP body 中无 URL 的 token/key/raw body 不泄露。"
+  CR-E-1:
+    status: "fixed"
+    evidence:
+      - "JsonLowAbsorbStorage.load_state() now performs explicit JSON syntax validation before dry-run model validation and atomic replace."
+      - "Codex bad JSON probe now raises ValueError and leaves state.json unchanged."
+  CR-E-2:
+    status: "fixed"
+    evidence:
+      - "config_validator.py adds _check_data_source() and includes data_source in _CHECKS."
+      - "Codex probe with data_production_mode=true and data_provider_mode='fixture' returns ready=False with data_source fixture_only_with_production_mode."
+  CR-E-3:
+    status: "fixed"
+    evidence:
+      - "test_low_absorb_storage.py now includes direct JsonLowAbsorbStorage.load_state() roundtrip, invalid JSON rejection, and fail-closed byte-for-byte unchanged tests."
 
 validation:
   codex_reran:
-    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_notifier.py agent/tests/test_low_absorb_reports.py agent/tests/test_low_absorb_feishu_integration.py -q"
+    - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests/test_low_absorb_api_contract.py agent/tests/test_low_absorb_main_api_integration.py agent/tests/test_low_absorb_storage.py -q"
       status: "passed"
-      output_summary: "28 passed, 2 skipped, 1 warning"
-    - command: "git diff --name-status"
-      status: "completed"
-      output_summary: "确认实际 diff 只包含 Batch D 相关源码、测试和规格文档；agent/src/low_absorb/__init__.py 不再出现。"
-    - command: "git diff --name-only -- agent/src/low_absorb/__init__.py frontend/src package.json frontend/package.json pyproject.toml uv.lock .github"
+      output_summary: "52 passed, 3 warnings"
+    - command: "direct Python probe: JsonLowAbsorbStorage.load_state(bad_json)"
       status: "passed"
-      output_summary: "无输出，确认禁止范围未被修改。"
-    - command: "rg -n \"str\\(exc\\)\" agent/src/low_absorb/notifier.py"
+      output_summary: "ValueError raised; unchanged=True"
+    - command: "direct Python probe: validate_production_readiness(data_production_mode=true, data_provider_mode=fixture)"
       status: "passed"
-      output_summary: "无输出，异常字符串未原样写入。"
-    - command: "rg -n \"safe_body\" agent/src/low_absorb/notifier.py"
+      output_summary: "ready=False; failures include ('data_source', False, 'fixture_only_with_production_mode')"
+    - command: "git diff --name-only -- frontend/src package.json frontend/package.json pyproject.toml uv.lock .github specs/constitution.md agent/ai_low_absorb"
       status: "passed"
-      output_summary: "无输出，不再保留经脱敏响应体变量。"
-    - command: "rg -n \"body\" agent/src/low_absorb/notifier.py"
-      status: "passed_with_note"
-      output_summary: "仅命中 transport 返回值解包；未写入 result.error/message/audit。"
+      output_summary: "No forbidden-scope output."
     - command: "rg -n \"券商|自动交易|一键交易|买入|卖出|下单\" agent/src frontend/src"
       status: "passed_with_note"
-      output_summary: "命中均为允许上下文、测试常量或项目既有技能/资料文本；本批次未新增真实交易执行入口。"
+      output_summary: "Matches are existing allowed/manual-context strings, tests, docs, or skill/reference material; Batch E does not add a trading execution path."
+    - command: "git check-ignore -v docs/deployment/low_absorb_production.md"
+      status: "completed"
+      output_summary: ".gitignore:54 docs/* ignores the required deployment doc; staging must explicitly include this approved file."
   delivery_accepted:
     - command: "C:\\Users\\hx\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pytest agent/tests -k low_absorb -q"
       status: "reported_passed"
-      output_summary: "delivery.yaml 记录 355 passed, 3 skipped, 3079 deselected。"
+      output_summary: "delivery.yaml records 367 passed, 3 skipped"
     - command: "cd frontend; npm.cmd run test:run"
       status: "reported_passed"
-      output_summary: "delivery.yaml 记录 26 files, 226 tests passed。"
+      output_summary: "delivery.yaml records 226 tests passed"
     - command: "cd frontend; npm.cmd run build"
       status: "reported_passed"
-      output_summary: "delivery.yaml 记录 tsc -b && vite build 成功。"
+      output_summary: "delivery.yaml records build success"
 
 spot_checks:
-  - id: "SC-1"
-    file: "agent/src/low_absorb/notifier.py"
-    result: "passed"
-    note: "真实发送默认受 LOW_ABSORB_FEISHU_REAL_SEND 控制；未开启时不调用 transport。"
-  - id: "SC-2"
-    file: "agent/src/low_absorb/notifier.py"
-    result: "passed"
-    note: "Webhook 只通过 _mask_webhook 暴露掩码值；异常/HTTP 失败路径不再回传原始异常或响应体。"
-  - id: "SC-3"
+  - id: "SC-E-1"
     file: "agent/src/low_absorb/storage.py"
     result: "passed"
-    note: "通知审计有 MAX_NOTIFICATION_AUDITS=500 上限，并支持 JSON 持久化/读取。"
-  - id: "SC-4"
-    file: "agent/src/low_absorb/api/settings.py"
+    note: "Direct load_state() now validates JSON before dry-run _load(); invalid JSON does not replace current state."
+  - id: "SC-E-2"
+    file: "agent/src/low_absorb/deployment/config_validator.py"
     result: "passed"
-    note: "新增 /low-absorb/settings/notifications/status、test、audit 路由，路径符合 Codex 确认。"
+    note: "readiness covers storage, API_AUTH_KEY, fixture fallback, data_source, cost_chain, and Feishu with fixed non-sensitive detail strings."
+  - id: "SC-E-3"
+    file: "agent/src/low_absorb/api/health.py"
+    result: "passed"
+    note: "Health endpoints use /low-absorb/health/liveness and /low-absorb/health/readiness, matching plan.md and implementation.yaml."
+  - id: "SC-E-4"
+    file: "docs/deployment/low_absorb_production.md"
+    result: "passed_with_note"
+    note: "Document exists and covers Windows environment variables, startup/shutdown, logs, health checks, backup, restore, rollback; file is ignored by docs/* and must be explicitly staged."
 
 findings:
   critical: []
@@ -132,26 +133,27 @@ changes_requested: []
 
 approved_for_commit:
   allowed_files:
-    - "agent/src/low_absorb/api/settings.py"
-    - "agent/src/low_absorb/models.py"
-    - "agent/src/low_absorb/notifier.py"
+    - "agent/src/low_absorb/api/__init__.py"
+    - "agent/src/low_absorb/api/health.py"
+    - "agent/src/low_absorb/deployment/__init__.py"
+    - "agent/src/low_absorb/deployment/backup.py"
+    - "agent/src/low_absorb/deployment/config_validator.py"
     - "agent/src/low_absorb/storage.py"
-    - "agent/tests/test_low_absorb_notifier.py"
-    - "agent/tests/test_low_absorb_reports.py"
-    - "agent/tests/test_low_absorb_feishu_integration.py"
-    - "agent/tests/test_low_absorb_supervisor.py"
-    - "agent/tests/test_low_absorb_workbench_api.py"
-    - "agent/tests/test_low_absorb_workflow.py"
+    - "agent/tests/test_low_absorb_api_contract.py"
+    - "agent/tests/test_low_absorb_main_api_integration.py"
+    - "agent/tests/test_low_absorb_storage.py"
+    - "docs/deployment/low_absorb_production.md"
     - "specs/active/002-low-absorb-production-readiness/implementation.yaml"
     - "specs/active/002-low-absorb-production-readiness/delivery.yaml"
     - "specs/active/002-low-absorb-production-readiness/review.yaml"
   forbidden_files:
     - "*"
-  commit_message: "[002] feat: Batch D Feishu controlled notification integration"
-  draft_pr_title: "[002] feat: Low Absorb Batch D Feishu controlled integration"
+  commit_message: "[002] feat: Batch E local production readiness"
+  draft_pr_title: "[002] feat: Low Absorb Batch E local production readiness"
   draft_pr_notes:
     - "只能精确暂存 approved_for_commit.allowed_files 中列出的文件。"
-    - "禁止暂存工作区中的 .codex、.playwright-mcp、AGENT.md、co.sh、constitution/templates、archived specs 等无关脏文件。"
+    - "禁止暂存 .codex、.playwright-mcp、.pr3-review-worktree、AGENT.md、co.sh、archived specs、specs/templates、specs/constitution.md 等无关脏文件。"
+    - "docs/deployment/low_absorb_production.md 被 .gitignore:54 docs/* 忽略；若进入版本阶段，必须只对该文件使用精确强制暂存，不能扩大到 docs/ 目录。"
     - "提交前必须执行 git diff --cached --name-only，确认只包含 allowed_files。"
 
 git_safety:
@@ -163,6 +165,6 @@ git_safety:
     - "git commit -am"
   required_pre_commit_check:
     - "git diff --cached --name-only 必须只包含 approved_for_commit.allowed_files。"
-    - "若版本操作前又产生新改动，必须重新请求 Codex 审查。"
+    - "如果暂存 docs/deployment/low_absorb_production.md，需要精确处理该 ignored 文件；禁止因此暂存 docs/ 其他路径。"
 
-summary: "Batch D 第三轮审查通过，结论为 APPROVED_FOR_COMMIT。前两轮问题均已关闭：__init__.py 越权改动已移除，delivery.yaml 证据已对齐，Feishu 真实发送异常和 HTTP 失败路径已改为固定安全摘要，不再回传原始异常或响应体。Codex 复跑 Batch D 定向测试通过：28 passed, 2 skipped, 1 warning。版本阶段只能精确暂存 allowed_files，且必须由用户明确授权。"
+summary: "Batch E 第二轮审查通过，结论为 APPROVED_FOR_COMMIT。上轮 CR-E-1/CR-E-2/CR-E-3 均已关闭；Codex 复跑 Batch E 定向测试通过，坏 JSON restore 和生产 fixture-only data_source readiness 探针均通过。版本阶段仍需用户明确授权，且只能精确暂存 approved_for_commit.allowed_files。"
